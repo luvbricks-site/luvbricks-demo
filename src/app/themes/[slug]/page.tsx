@@ -12,7 +12,7 @@ type Params = { params: { slug: string } };
 type ProductForTheme = {
   id: string;
   slug: string;
-  setNumber: number;            // 🔁 FIX: number, not string
+  setNumber: number;
   name: string;
   msrpCents: number;
   images: { url: string | null }[];
@@ -21,6 +21,7 @@ type ProductForTheme = {
 export default async function ThemePage({ params }: Params) {
   const { slug } = params;
 
+  // Try to load Theme row in non-demo mode. If Theme table is missing (P2021), ignore.
   let theme:
     | {
         id: string;
@@ -42,11 +43,17 @@ export default async function ThemePage({ params }: Params) {
         "code" in err &&
         (err as { code?: string }).code;
 
-      if (code !== "P2021") throw err;
-      // If P2021 (Theme table missing), ignore and continue.
+      if (code !== "P2021") {
+        // Unexpected DB error: surface it in non-demo.
+        throw err;
+      }
+      // If P2021 (Theme table missing), fall through with theme = null.
     }
   }
 
+  // Build product filter:
+  // - If Theme row exists, use themeId.
+  // - Otherwise (demo / missing Theme table), fall back to themeSlug.
   const productWhere = theme
     ? {
         themeId: theme.id,
@@ -67,7 +74,7 @@ export default async function ThemePage({ params }: Params) {
       orderBy: { name: "asc" },
       include: {
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        // inventory loaded but unused here
+        // inventory loaded but not used here
       },
     });
 
@@ -79,19 +86,23 @@ export default async function ThemePage({ params }: Params) {
       "code" in err &&
       (err as { code?: string }).code;
 
+    // If the Product table is missing in this environment, don't kill the page in demo.
     if (code === "P2021" && DEMO_MODE) {
       products = [];
     } else if (code === "P2021") {
+      // Non-demo + missing Product table is a real problem:
       throw err;
     } else if (err) {
       throw err;
     }
   }
 
+  // If nothing exists at all, it's a 404.
   if (!theme && products.length === 0) {
     return notFound();
   }
 
+  // Title: prefer Theme.name, else prettify slug.
   const themeTitle =
     theme?.name ??
     slug
