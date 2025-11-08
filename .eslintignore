@@ -1,0 +1,6 @@
+﻿prisma/seed.cjs
+.next/
+.turbo/
+dist/
+build/
+coverage/
