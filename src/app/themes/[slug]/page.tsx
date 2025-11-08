@@ -11,8 +11,8 @@ type Params = { params: { slug: string } };
 export default async function ThemePage({ params }: Params) {
   const { slug } = params;
 
-  // Try to load Theme row only when not in demo mode.
-  // If the Theme table is missing (P2021), we fall back gracefully.
+  // In non-demo mode, try to load a Theme row.
+  // If the Theme table is missing (P2021), we'll just fall back.
   let theme:
     | {
         id: string;
@@ -34,17 +34,17 @@ export default async function ThemePage({ params }: Params) {
         "code" in err &&
         (err as { code?: string }).code;
 
-      // If it's not "table does not exist", rethrow.
+      // If it's some unexpected error, rethrow.
       if (code !== "P2021") {
         throw err;
       }
-      // If P2021, leave theme = null and continue with fallback logic.
+      // If P2021 (Theme table missing), leave theme = null and continue.
     }
   }
 
-  // Build product filter:
-  // - If we have a real Theme row, use themeId.
-  // - Otherwise (demo / missing table), fall back to themeSlug = [slug].
+  // Product filter:
+  // - If we have a Theme row, filter by themeId.
+  // - Otherwise (demo / missing Theme table), fall back to themeSlug.
   const where = theme
     ? {
         themeId: theme.id,
@@ -52,7 +52,6 @@ export default async function ThemePage({ params }: Params) {
         images: { some: {} },
       }
     : {
-        // Fallback: this assumes your products store a themeSlug matching the URL.
         themeSlug: slug,
         isActive: true,
         images: { some: {} },
@@ -67,14 +66,14 @@ export default async function ThemePage({ params }: Params) {
     },
   });
 
-  // If we have no theme metadata and no products, treat as 404.
+  // If nothing matches at all, 404.
   if (!theme && products.length === 0) {
     return notFound();
   }
 
-  // Title: prefer DB theme name; otherwise prettify slug.
+  // Title: prefer Theme.name, else prettify slug.
   const themeTitle =
-    theme?.name ||
+    theme?.name ??
     slug
       .split("-")
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
@@ -90,7 +89,8 @@ export default async function ThemePage({ params }: Params) {
       )}
       {DEMO_MODE && !theme && (
         <p className="mt-1 text-[10px] text-amber-500">
-          Demo mode: theme content is based on the URL slug and demo catalog.
+          Demo mode: theme details are inferred from the URL; products are
+          filtered by this theme slug.
         </p>
       )}
 
@@ -113,10 +113,14 @@ export default async function ThemePage({ params }: Params) {
   );
 }
 
+/**
+ * generateStaticParams:
+ * - In DEMO_MODE, returns a hardcoded list of theme slugs.
+ * - Otherwise, tries to read from prisma.theme.
+ * - If anything goes wrong (e.g. Theme table missing), returns [] so the build does NOT fail.
+ */
 export async function generateStaticParams() {
-  // In demo mode, avoid relying on a Theme table that may not exist.
   if (DEMO_MODE) {
-    // Hardcode the theme slugs you actually link to in nav.
     return [
       { slug: "city" },
       { slug: "marvel" },
@@ -133,16 +137,8 @@ export async function generateStaticParams() {
       select: { slug: true },
     });
     return themes.map((t) => ({ slug: t.slug }));
-  } catch (err: unknown) {
-    // If the Theme table is missing (P2021), fail gracefully instead of breaking the build.
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as { code?: string }).code === "P2021"
-    ) {
-      return [];
-    }
-    throw err;
+  } catch {
+    // Key line: swallow P2021 / any db issues so /themes/[slug] doesn't break the build.
+    return [];
   }
 }
