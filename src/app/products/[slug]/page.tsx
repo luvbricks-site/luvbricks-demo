@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/currency";
 import { tierLabelForPrice } from "@/lib/tiers";
 import AddToCartButton from "@/components/cart/AddToCartButton";
+import { DEMO_MODE } from "@/lib/demoMode";
 
 type Params = { params: { slug: string } };
 
@@ -149,6 +150,36 @@ export default async function ProductPage({ params }: Params) {
 }
 
 export async function generateStaticParams() {
-  const products = await prisma.product.findMany({ select: { slug: true } });
-  return products.map((p) => ({ slug: p.slug }));
+  // In demo mode, don't rely on the database at build time.
+  // Option A: return an empty list (no pre-built product pages).
+  // Option B: hardcode a few known slugs you want pre-rendered.
+  if (DEMO_MODE) {
+    return [
+      // { slug: "some-demo-product-slug" },
+      // add any you like, or leave empty:
+    ];
+  }
+
+  // Non-demo: try to read from DB, but fail soft if the table is missing.
+  try {
+    const products = await prisma.product.findMany({
+      select: { slug: true },
+    });
+    return products.map((p) => ({ slug: p.slug }));
+  } catch (err: unknown) {
+    const code =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code;
+
+    // If the Product table/schema is missing in this environment,
+    // avoid killing the build – just don't pre-generate any slugs.
+    if (code === "P2021") {
+      return [];
+    }
+
+    // Anything else is a real error.
+    throw err;
+  }
 }
