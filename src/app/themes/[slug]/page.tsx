@@ -8,11 +8,19 @@ export const revalidate = 60; // ISR: refresh each minute
 
 type Params = { params: { slug: string } };
 
+// Minimal shape for what we render here
+type ProductForTheme = {
+  id: string;
+  slug: string;
+  setNumber: number;            // 🔁 FIX: number, not string
+  name: string;
+  msrpCents: number;
+  images: { url: string | null }[];
+};
+
 export default async function ThemePage({ params }: Params) {
   const { slug } = params;
 
-  // In non-demo mode, try to load a Theme row.
-  // If the Theme table is missing (P2021), we'll just fall back.
   let theme:
     | {
         id: string;
@@ -34,18 +42,12 @@ export default async function ThemePage({ params }: Params) {
         "code" in err &&
         (err as { code?: string }).code;
 
-      // If it's some unexpected error, rethrow.
-      if (code !== "P2021") {
-        throw err;
-      }
-      // If P2021 (Theme table missing), leave theme = null and continue.
+      if (code !== "P2021") throw err;
+      // If P2021 (Theme table missing), ignore and continue.
     }
   }
 
-  // Product filter:
-  // - If we have a Theme row, filter by themeId.
-  // - Otherwise (demo / missing Theme table), fall back to themeSlug.
-  const where = theme
+  const productWhere = theme
     ? {
         themeId: theme.id,
         isActive: true,
@@ -57,21 +59,39 @@ export default async function ThemePage({ params }: Params) {
         images: { some: {} },
       };
 
-  const products = await prisma.product.findMany({
-    where,
-    orderBy: { name: "asc" },
-    include: {
-      images: { orderBy: { sortOrder: "asc" }, take: 1 },
-      inventory: true,
-    },
-  });
+  let products: ProductForTheme[] = [];
 
-  // If nothing matches at all, 404.
+  try {
+    const result = await prisma.product.findMany({
+      where: productWhere,
+      orderBy: { name: "asc" },
+      include: {
+        images: { orderBy: { sortOrder: "asc" }, take: 1 },
+        // inventory loaded but unused here
+      },
+    });
+
+    products = result as ProductForTheme[];
+  } catch (err: unknown) {
+    const code =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code;
+
+    if (code === "P2021" && DEMO_MODE) {
+      products = [];
+    } else if (code === "P2021") {
+      throw err;
+    } else if (err) {
+      throw err;
+    }
+  }
+
   if (!theme && products.length === 0) {
     return notFound();
   }
 
-  // Title: prefer Theme.name, else prettify slug.
   const themeTitle =
     theme?.name ??
     slug
@@ -84,13 +104,15 @@ export default async function ThemePage({ params }: Params) {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
       <h1 className="text-3xl font-extrabold text-slate-900">{themeTitle}</h1>
+
       {themeDescription && (
         <p className="mt-1 text-sm text-slate-600">{themeDescription}</p>
       )}
+
       {DEMO_MODE && !theme && (
         <p className="mt-1 text-[10px] text-amber-500">
-          Demo mode: theme details are inferred from the URL; products are
-          filtered by this theme slug.
+          Demo mode: Theme metadata is inferred from the URL; products are
+          filtered by this theme slug when available.
         </p>
       )}
 
@@ -115,30 +137,18 @@ export default async function ThemePage({ params }: Params) {
 
 /**
  * generateStaticParams:
- * - In DEMO_MODE, returns a hardcoded list of theme slugs.
- * - Otherwise, tries to read from prisma.theme.
- * - If anything goes wrong (e.g. Theme table missing), returns [] so the build does NOT fail.
+ * For the demo, we DO NOT touch Prisma here at all.
+ * We just return the list of theme slugs we care about.
+ * This guarantees no build-time DB errors for /themes/[slug].
  */
 export async function generateStaticParams() {
-  if (DEMO_MODE) {
-    return [
-      { slug: "city" },
-      { slug: "marvel" },
-      { slug: "friends" },
-      { slug: "harry-potter" },
-      { slug: "star-wars" },
-      { slug: "cmf" },
-      { slug: "duplo" },
-    ];
-  }
-
-  try {
-    const themes = await prisma.theme.findMany({
-      select: { slug: true },
-    });
-    return themes.map((t) => ({ slug: t.slug }));
-  } catch {
-    // Key line: swallow P2021 / any db issues so /themes/[slug] doesn't break the build.
-    return [];
-  }
+  return [
+    { slug: "city" },
+    { slug: "marvel" },
+    { slug: "friends" },
+    { slug: "harry-potter" },
+    { slug: "star-wars" },
+    { slug: "cmf" },
+    { slug: "duplo" },
+  ];
 }
