@@ -4,56 +4,54 @@ import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
 import { DEMO_MODE } from "@/lib/demoMode";
 
-export const revalidate = 60; // ISR: refresh each minute
+export const revalidate = 60; // ISR: refresh every minute
 
 type Params = { params: { slug: string } };
 
-// Minimal shape for what we render here
-type ProductForTheme = {
+// Match what we actually select from Theme
+type ThemeMeta = {
   id: string;
-  slug: string;
-  setNumber: number;
   name: string;
-  msrpCents: number;
-  images: { url: string | null }[];
 };
 
-export default async function ThemePage({ params }: Params) {
-  const { slug } = params;
+// Safely read a Prisma error code without using `any`
+function getPrismaCode(err: unknown): string | undefined {
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code?: unknown }).code === "string"
+  ) {
+    return (err as { code: string }).code;
+  }
+  return undefined;
+}
 
-  // Try to load Theme row in non-demo mode. If Theme table is missing (P2021), ignore.
-  let theme:
-    | {
-        id: string;
-        name: string;
-        slug: string;
-        description?: string | null;
-      }
-    | null = null;
+export default async function ThemePage({ params }: Params) {
+  const slug = params.slug;
+
+  // ---------- Load optional theme metadata ----------
+  let theme: ThemeMeta | null = null;
 
   if (!DEMO_MODE) {
     try {
-      theme = await prisma.theme.findUnique({
+      const t = await prisma.theme.findUnique({
         where: { slug },
+        select: { id: true, name: true },
       });
-    } catch (err: unknown) {
-      const code =
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code?: string }).code;
-
+      theme = t ?? null;
+    } catch (err) {
+      const code = getPrismaCode(err);
       if (code !== "P2021") {
-        // Unexpected DB error: surface it in non-demo.
+        // Real error in non-demo mode: surface it
         throw err;
       }
-      // If P2021 (Theme table missing), fall through with theme = null.
+      // If P2021 (Theme table missing), continue with theme = null
     }
   }
 
-  // Build product filter:
-  // - If Theme row exists, use themeId.
-  // - Otherwise (demo / missing Theme table), fall back to themeSlug.
+  // ---------- Build product filter ----------
+  // If we have a Theme row, filter by themeId; otherwise fall back to themeSlug.
   const productWhere = theme
     ? {
         themeId: theme.id,
@@ -66,6 +64,16 @@ export default async function ThemePage({ params }: Params) {
         images: { some: {} },
       };
 
+  // Minimal shape we need for rendering Theme products
+  type ProductForTheme = {
+    id: string;
+    slug: string;
+    setNumber: number; // must be number to match ProductCard/ProductLite
+    name: string;
+    msrpCents: number;
+    images: { url: string | null }[];
+  };
+
   let products: ProductForTheme[] = [];
 
   try {
@@ -74,56 +82,53 @@ export default async function ThemePage({ params }: Params) {
       orderBy: { name: "asc" },
       include: {
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        // inventory loaded but not used here
+        inventory: true,
       },
     });
 
-    products = result as ProductForTheme[];
+    // Map Prisma payload → the minimal shape our UI needs
+    products = result.map((p) => ({
+      id: p.id,
+      slug: p.slug,
+      // Normalize just in case schema/types drift; ensures `number`
+      setNumber: typeof p.setNumber === "number" ? p.setNumber : Number(p.setNumber),
+      name: p.name,
+      msrpCents: p.msrpCents,
+      images: p.images.map((img) => ({ url: img.url })),
+    }));
   } catch (err: unknown) {
-    const code =
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as { code?: string }).code;
+    const code = getPrismaCode(err);
 
-    // If the Product table is missing in this environment, don't kill the page in demo.
     if (code === "P2021" && DEMO_MODE) {
+      // Demo + missing Product table: show empty instead of failing
       products = [];
-    } else if (code === "P2021") {
-      // Non-demo + missing Product table is a real problem:
-      throw err;
-    } else if (err) {
+    } else {
+      // Anything else: real error
       throw err;
     }
   }
 
-  // If nothing exists at all, it's a 404.
+  // If absolutely nothing exists, 404
   if (!theme && products.length === 0) {
     return notFound();
   }
 
-  // Title: prefer Theme.name, else prettify slug.
-  const themeTitle =
+  // ---------- UI bits ----------
+  const title =
     theme?.name ??
     slug
       .split("-")
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
       .join(" ");
 
-  const themeDescription = theme?.description ?? null;
-
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
-      <h1 className="text-3xl font-extrabold text-slate-900">{themeTitle}</h1>
-
-      {themeDescription && (
-        <p className="mt-1 text-sm text-slate-600">{themeDescription}</p>
-      )}
+      <h1 className="text-3xl font-extrabold text-slate-900">{title}</h1>
 
       {DEMO_MODE && !theme && (
         <p className="mt-1 text-[10px] text-amber-500">
-          Demo mode: Theme metadata is inferred from the URL; products are
-          filtered by this theme slug when available.
+          Demo mode: theme page is resolved by slug only; Theme table is
+          optional.
         </p>
       )}
 
@@ -136,7 +141,7 @@ export default async function ThemePage({ params }: Params) {
               setNumber: p.setNumber,
               name: p.name,
               msrpCents: p.msrpCents,
-              imageUrl: p.images[0]?.url,
+              imageUrl: p.images[0]?.url || undefined,
               themeSlug: slug,
             }}
           />
@@ -147,10 +152,9 @@ export default async function ThemePage({ params }: Params) {
 }
 
 /**
- * generateStaticParams:
- * For the demo, we DO NOT touch Prisma here at all.
- * We just return the list of theme slugs we care about.
- * This guarantees no build-time DB errors for /themes/[slug].
+ * Static params for demo:
+ *  - No Prisma calls here at all.
+ *  - This is what fixes the P2021 build failure for /themes/[slug].
  */
 export async function generateStaticParams() {
   return [
