@@ -1,5 +1,6 @@
 // src/app/set-request/page.tsx
 import { prisma } from "@/lib/db";
+import { DEMO_MODE } from "@/lib/demoMode";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { computeProgress, money } from "@/lib/requests";
@@ -7,18 +8,56 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 
 type RequestWithSupports = Prisma.SetRequestGetPayload<{
-  include: { supports: true }
+  include: { supports: true };
 }>;
-
 
 export const revalidate = 30;
 
+/* ---------------------- Prisma error helpers ---------------------- */
+function getPrismaCode(err: unknown): string | undefined {
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code?: unknown }).code === "string"
+  ) {
+    return (err as { code: string }).code;
+  }
+  return undefined;
+}
+
+function isPrismaUnavailable(err: unknown): boolean {
+  const code = getPrismaCode(err);
+
+  let msg = "";
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string"
+  ) {
+    msg = (err as { message: string }).message;
+  }
+
+  // P2021 = table missing; "Unable to open the database file" / init error = db not bundled/available
+  return (
+    code === "P2021" ||
+    msg.includes("Unable to open the database file") ||
+    msg.includes("PrismaClientInitializationError")
+  );
+}
+
+/* ------------------------ misc helpers ------------------------ */
 async function getOrCreateUserToken() {
-  const c = await cookies();                     // 👈 await here
+  const c = await cookies(); // App Router cookies is async in latest Next
   let token = c.get("sr_token")?.value;
   if (!token) {
     token = crypto.randomUUID();
-    c.set("sr_token", token, { httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
+    c.set("sr_token", token, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
   }
   return token;
 }
@@ -26,27 +65,37 @@ async function getOrCreateUserToken() {
 /* ------------------------ SERVER ACTIONS ------------------------ */
 async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
   "use server";
+
+  // Demo mode: no writes, just refresh UI
+  if (DEMO_MODE) {
+    revalidatePath("/set-request");
+    return;
+  }
+
   const token = await getOrCreateUserToken();
 
-  // Create support (unique on [setRequestId, token, type])
   await prisma.setSupport.upsert({
     where: {
-      setRequestId_userToken_type: { setRequestId, userToken: token, type: kind },
+      setRequestId_userToken_type: {
+        setRequestId,
+        userToken: token,
+        type: kind,
+      },
     },
     create: {
       setRequestId,
       userToken: token,
       type: kind,
-      amountCents: kind === "deposit" ? 500 : null, // track $5 deposit
+      amountCents: kind === "deposit" ? 500 : null,
     },
-    update: {}, // no-op if it exists
+    update: {},
   });
 
-  // Recompute progress and flip to INCOMING if target met
   const req = await prisma.setRequest.findUnique({
     where: { id: setRequestId },
     include: { supports: true },
   });
+
   if (req) {
     const { weighted, target } = computeProgress(req);
     if (weighted >= target && req.status === "collecting") {
@@ -54,7 +103,6 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
         where: { id: setRequestId },
         data: { status: "incoming" },
       });
-      // TODO: enqueue email / internal notification to place order
     }
   }
 
@@ -63,42 +111,65 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
 
 async function createRequestAction(formData: FormData) {
   "use server";
+
+  // Demo mode: no writes, just refresh
+  if (DEMO_MODE) {
+    revalidatePath("/set-request");
+    return;
+  }
+
   const token = await getOrCreateUserToken();
 
   const setNumber = Number((formData.get("setNumber") ?? "").toString().trim());
   if (!Number.isFinite(setNumber)) return;
 
-  // Try to prefill from your existing Product table if present
+  // Prefill from Product table if available
   const prod = await prisma.product.findFirst({
     where: { setNumber, isActive: true },
     include: { theme: true },
   });
 
-  const name = (formData.get("name") || prod?.name || `Set #${setNumber}`).toString().slice(0, 120);
-  const msrpCents = prod?.msrpCents ?? Number((formData.get("msrpCents") || "0").toString());
+  const name = (
+    formData.get("name") ||
+    prod?.name ||
+    `Set #${setNumber}`
+  ).toString().slice(0, 120);
+
+  const msrpCents =
+    prod?.msrpCents ?? Number((formData.get("msrpCents") || "0").toString());
+
   const tier = msrpCents > 0 ? tierFromMsrp(msrpCents / 100) : guessTierFromOpenForm(formData);
 
-  // If a request for this set already exists, just add a vote
-  const existing = await prisma.setRequest.findFirst({ where: { setNumber, status: { in: ["collecting", "incoming"] } } });
-  const reqId = existing?.id ?? (await prisma.setRequest.create({
-    data: {
-      setNumber,
-      name,
-      theme: prod?.theme?.name ?? (formData.get("theme")?.toString() || null),
-      msrpCents: msrpCents || 0,
-      tier,
-      source: "open",
-      status: "collecting",
-      // Default thresholds by tier (free-vote / deposit). Adjust as desired.
-      thresholdVotes: [0, 100, 35, 23, 12, 6][tier] || 20,
-      thresholdDepos: [0, 45, 15, 10, 5, 3][tier] || 10,
-    },
-  })).id;
+  const existing = await prisma.setRequest.findFirst({
+    where: { setNumber, status: { in: ["collecting", "incoming"] } },
+  });
 
-  // First vote by the creator
+  const reqId =
+    existing?.id ??
+    (
+      await prisma.setRequest.create({
+        data: {
+          setNumber,
+          name,
+          theme: prod?.theme?.name ?? (formData.get("theme")?.toString() || null),
+          msrpCents: msrpCents || 0,
+          tier,
+          source: "open",
+          status: "collecting",
+          // Defaults by tier — tune as desired
+          thresholdVotes: [0, 100, 35, 23, 12, 6][tier] || 20,
+          thresholdDepos: [0, 45, 15, 10, 5, 3][tier] || 10,
+        },
+      })
+    ).id;
+
   await prisma.setSupport.upsert({
     where: {
-      setRequestId_userToken_type: { setRequestId: reqId, userToken: token, type: "vote" },
+      setRequestId_userToken_type: {
+        setRequestId: reqId,
+        userToken: token,
+        type: "vote",
+      },
     },
     create: { setRequestId: reqId, userToken: token, type: "vote" },
     update: {},
@@ -122,26 +193,35 @@ function guessTierFromOpenForm(fd: FormData) {
 
 /* ---------------------------- PAGE ----------------------------- */
 export default async function SetRequestPage() {
-  // Show top curated poll (limit 10), then “open” newest
-  const poll: RequestWithSupports[] = await prisma.setRequest.findMany({
-  where: { source: "poll", status: { in: ["collecting", "incoming"] } },
-  orderBy: [{ status: "desc" }, { createdAt: "desc" }],
-  include: { supports: true },
-  take: 10,
-});
+  let poll: RequestWithSupports[] = [];
+  let open: RequestWithSupports[] = [];
 
-const open: RequestWithSupports[] = await prisma.setRequest.findMany({
-  where: { source: "open", status: { in: ["collecting", "incoming"] } },
-  orderBy: [{ createdAt: "desc" }],
-  include: { supports: true },
-  take: 6,
-});
+  try {
+    poll = await prisma.setRequest.findMany({
+      where: { source: "poll", status: { in: ["collecting", "incoming"] } },
+      orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+      include: { supports: true },
+      take: 10,
+    });
 
+    open = await prisma.setRequest.findMany({
+      where: { source: "open", status: { in: ["collecting", "incoming"] } },
+      orderBy: [{ createdAt: "desc" }],
+      include: { supports: true },
+      take: 6,
+    });
+  } catch (err) {
+    if (isPrismaUnavailable(err)) {
+      console.warn("[set-request] prerender: Prisma unavailable; rendering empty lists.");
+      poll = [];
+      open = [];
+    } else {
+      throw err;
+    }
+  }
 
-  const cookieStore = await cookies();           // 👈 await
+  const cookieStore = await cookies();
   const token = cookieStore.get("sr_token")?.value ?? "";
-  // ...
-
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
@@ -180,22 +260,41 @@ const open: RequestWithSupports[] = await prisma.setRequest.findMany({
 
         <form action={createRequestAction} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="setNumber" className="block text-sm font-medium text-slate-700">Set #</label>
-            <input id="setNumber" name="setNumber" required
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" placeholder="75336" />
+            <label htmlFor="setNumber" className="block text-sm font-medium text-slate-700">
+              Set #
+            </label>
+            <input
+              id="setNumber"
+              name="setNumber"
+              required
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              placeholder="75336"
+            />
           </div>
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-slate-700">Name (optional)</label>
+            <label htmlFor="name" className="block text-sm font-medium text-slate-700">
+              Name (optional)
+            </label>
             <input id="name" name="name" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" />
           </div>
           <div>
-            <label htmlFor="msrpCents" className="block text-sm font-medium text-slate-700">MSRP (optional)</label>
-            <input id="msrpCents" name="msrpCents" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-              placeholder="$99.99 or cents" />
-            <p className="mt-1 text-xs text-slate-500">You can enter cents (9999) or leave blank—we’ll try to look it up.</p>
+            <label htmlFor="msrpCents" className="block text-sm font-medium text-slate-700">
+              MSRP (optional)
+            </label>
+            <input
+              id="msrpCents"
+              name="msrpCents"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              placeholder="$99.99 or cents"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              You can enter cents (9999) or leave blank—we’ll try to look it up.
+            </p>
           </div>
           <div>
-            <label htmlFor="theme" className="block text-sm font-medium text-slate-700">Theme (optional)</label>
+            <label htmlFor="theme" className="block text-sm font-medium text-slate-700">
+              Theme (optional)
+            </label>
             <input id="theme" name="theme" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" />
           </div>
 
@@ -224,10 +323,7 @@ async function MaybeProductLink({ setNumber }: { setNumber: number }) {
 
   return (
     <div className="mt-3 text-sm">
-      <Link
-        href={`/product/${p.slug}`}  // ✅ no stray backticks / braces
-        className="text-blue-700 hover:underline"
-      >
+      <Link href={`/products/${p.slug}`} className="text-blue-700 hover:underline">
         View details
       </Link>
     </div>
@@ -259,7 +355,6 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         </div>
         <StatusPill incoming={isIncoming} />
       </div>
-      
 
       {/* Progress bar */}
       <div className="mt-4">
@@ -280,7 +375,8 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         <form action={voteAction.bind(null, req.id, "vote")}>
           <button
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-            disabled={alreadyVoted || isIncoming}
+            disabled={alreadyVoted || isIncoming || DEMO_MODE}
+            title={DEMO_MODE ? "Disabled in demo mode" : undefined}
           >
             {alreadyVoted ? "Voted ✓" : "Add Vote"}
           </button>
@@ -289,8 +385,12 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         <form action={voteAction.bind(null, req.id, "deposit")}>
           <button
             className="rounded-md border border-blue-600 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-            disabled={alreadyDeposited || isIncoming}
-            title="$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"
+            disabled={alreadyDeposited || isIncoming || DEMO_MODE}
+            title={
+              DEMO_MODE
+                ? "Disabled in demo mode"
+                : "$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"
+            }
           >
             {alreadyDeposited ? "Deposited ✓" : "Add $5 Deposit"}
           </button>
@@ -310,14 +410,9 @@ function StatusPill({ incoming }: { incoming: boolean }) {
       </span>
     );
   }
-
   return (
     <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
       Incoming
     </span>
   );
 }
-
-
-
-// Async child is f
