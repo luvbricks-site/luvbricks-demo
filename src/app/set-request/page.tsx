@@ -1,11 +1,11 @@
 // src/app/set-request/page.tsx
 import { prisma } from "@/lib/db";
-import { DEMO_MODE } from "@/lib/demoMode";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { computeProgress, money } from "@/lib/requests";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
+import { DEMO_MODE } from "@/lib/demoMode";
 
 type RequestWithSupports = Prisma.SetRequestGetPayload<{
   include: { supports: true };
@@ -13,33 +13,33 @@ type RequestWithSupports = Prisma.SetRequestGetPayload<{
 
 export const revalidate = 30;
 
-/* ---------------------- Prisma error helpers ---------------------- */
+/* ---------------------- Prisma/infra helpers ---------------------- */
+
+type ErrWithCode = { code?: unknown };
+type ErrWithMessage = { message?: unknown };
+
 function getPrismaCode(err: unknown): string | undefined {
-  if (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    typeof (err as { code?: unknown }).code === "string"
-  ) {
-    return (err as { code: string }).code;
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as ErrWithCode).code;
+    return typeof code === "string" ? code : undefined;
   }
   return undefined;
 }
 
+function prismaMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as ErrWithMessage).message;
+    return typeof msg === "string" ? msg : "";
+  }
+  return "";
+}
+
+/** True if we should fail-soft (table missing / sqlite file not available) */
 function isPrismaUnavailable(err: unknown): boolean {
   const code = getPrismaCode(err);
-
-  let msg = "";
-  if (
-    typeof err === "object" &&
-    err !== null &&
-    "message" in err &&
-    typeof (err as { message?: unknown }).message === "string"
-  ) {
-    msg = (err as { message: string }).message;
-  }
-
-  // P2021 = table missing; "Unable to open the database file" / init error = db not bundled/available
+  const msg = prismaMessage(err);
+  // P2021: table does not exist
+  // "Unable to open the database file" / PrismaClientInitializationError: sqlite file not present/locked during build
   return (
     code === "P2021" ||
     msg.includes("Unable to open the database file") ||
@@ -47,26 +47,27 @@ function isPrismaUnavailable(err: unknown): boolean {
   );
 }
 
-/* ------------------------ misc helpers ------------------------ */
-async function getOrCreateUserToken() {
-  const c = await cookies(); // App Router cookies is async in latest Next
+/** cookies() is sync in App Router, but `await` is harmless and fixes TS in some versions */
+async function getOrCreateUserToken(): Promise<string> {
+  const c = await cookies();
   let token = c.get("sr_token")?.value;
   if (!token) {
     token = crypto.randomUUID();
     c.set("sr_token", token, {
       httpOnly: true,
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 365,
+      maxAge: 60 * 60 * 24 * 365, // 1y
     });
   }
   return token;
 }
 
-/* ------------------------ SERVER ACTIONS ------------------------ */
+/* --------------------------- SERVER ACTIONS --------------------------- */
+
 async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
   "use server";
 
-  // Demo mode: no writes, just refresh UI
+  // In demo, pretend success and just refresh the page.
   if (DEMO_MODE) {
     revalidatePath("/set-request");
     return;
@@ -74,36 +75,38 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
 
   const token = await getOrCreateUserToken();
 
-  await prisma.setSupport.upsert({
-    where: {
-      setRequestId_userToken_type: {
+  try {
+    await prisma.setSupport.upsert({
+      where: {
+        setRequestId_userToken_type: { setRequestId, userToken: token, type: kind },
+      },
+      create: {
         setRequestId,
         userToken: token,
         type: kind,
+        amountCents: kind === "deposit" ? 500 : null,
       },
-    },
-    create: {
-      setRequestId,
-      userToken: token,
-      type: kind,
-      amountCents: kind === "deposit" ? 500 : null,
-    },
-    update: {},
-  });
+      update: {},
+    });
 
-  const req = await prisma.setRequest.findUnique({
-    where: { id: setRequestId },
-    include: { supports: true },
-  });
+    const req = await prisma.setRequest.findUnique({
+      where: { id: setRequestId },
+      include: { supports: true },
+    });
 
-  if (req) {
-    const { weighted, target } = computeProgress(req);
-    if (weighted >= target && req.status === "collecting") {
-      await prisma.setRequest.update({
-        where: { id: setRequestId },
-        data: { status: "incoming" },
-      });
+    if (req) {
+      const { weighted, target } = computeProgress(req);
+      if (weighted >= target && req.status === "collecting") {
+        await prisma.setRequest.update({
+          where: { id: setRequestId },
+          data: { status: "incoming" },
+        });
+        // TODO: enqueue notification
+      }
     }
+  } catch (err) {
+    if (!isPrismaUnavailable(err)) throw err; // legitimate bug -> surface
+    // demo / missing DB -> ignore
   }
 
   revalidatePath("/set-request");
@@ -112,7 +115,6 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
 async function createRequestAction(formData: FormData) {
   "use server";
 
-  // Demo mode: no writes, just refresh
   if (DEMO_MODE) {
     revalidatePath("/set-request");
     return;
@@ -123,62 +125,63 @@ async function createRequestAction(formData: FormData) {
   const setNumber = Number((formData.get("setNumber") ?? "").toString().trim());
   if (!Number.isFinite(setNumber)) return;
 
-  // Prefill from Product table if available
-  const prod = await prisma.product.findFirst({
-    where: { setNumber, isActive: true },
-    include: { theme: true },
-  });
+  try {
+    // Try to prefill from Product if available
+    const prod = await prisma.product.findFirst({
+      where: { setNumber, isActive: true },
+      include: { theme: true },
+    });
 
-  const name = (
-    formData.get("name") ||
-    prod?.name ||
-    `Set #${setNumber}`
-  ).toString().slice(0, 120);
+    const name =
+      (formData.get("name") || prod?.name || `Set #${setNumber}`)
+        .toString()
+        .slice(0, 120);
 
-  const msrpCents =
-    prod?.msrpCents ?? Number((formData.get("msrpCents") || "0").toString());
+    const msrpCents =
+      prod?.msrpCents ?? Number((formData.get("msrpCents") || "0").toString());
 
-  const tier = msrpCents > 0 ? tierFromMsrp(msrpCents / 100) : guessTierFromOpenForm(formData);
+    const tier = msrpCents > 0 ? tierFromMsrp(msrpCents / 100) : guessTierFromOpenForm(formData);
 
-  const existing = await prisma.setRequest.findFirst({
-    where: { setNumber, status: { in: ["collecting", "incoming"] } },
-  });
+    const existing = await prisma.setRequest.findFirst({
+      where: { setNumber, status: { in: ["collecting", "incoming"] } },
+    });
 
-  const reqId =
-    existing?.id ??
-    (
-      await prisma.setRequest.create({
-        data: {
-          setNumber,
-          name,
-          theme: prod?.theme?.name ?? (formData.get("theme")?.toString() || null),
-          msrpCents: msrpCents || 0,
-          tier,
-          source: "open",
-          status: "collecting",
-          // Defaults by tier — tune as desired
-          thresholdVotes: [0, 100, 35, 23, 12, 6][tier] || 20,
-          thresholdDepos: [0, 45, 15, 10, 5, 3][tier] || 10,
-        },
-      })
-    ).id;
+    const reqId =
+      existing?.id ??
+      (
+        await prisma.setRequest.create({
+          data: {
+            setNumber,
+            name,
+            theme: prod?.theme?.name ?? (formData.get("theme")?.toString() || null),
+            msrpCents: msrpCents || 0,
+            tier,
+            source: "open",
+            status: "collecting",
+            // default thresholds (adjust as you like)
+            thresholdVotes: [0, 100, 35, 23, 12, 6][tier] || 20,
+            thresholdDepos: [0, 45, 15, 10, 5, 3][tier] || 10,
+          },
+        })
+      ).id;
 
-  await prisma.setSupport.upsert({
-    where: {
-      setRequestId_userToken_type: {
-        setRequestId: reqId,
-        userToken: token,
-        type: "vote",
+    await prisma.setSupport.upsert({
+      where: {
+        setRequestId_userToken_type: { setRequestId: reqId, userToken: token, type: "vote" },
       },
-    },
-    create: { setRequestId: reqId, userToken: token, type: "vote" },
-    update: {},
-  });
+      create: { setRequestId: reqId, userToken: token, type: "vote" },
+      update: {},
+    });
+  } catch (err) {
+    if (!isPrismaUnavailable(err)) throw err;
+    // demo / missing DB -> ignore
+  }
 
   revalidatePath("/set-request");
 }
 
-/* --- helpers for tier from dollars (matches your tiers.ts ranges) --- */
+/* ------------------------ tier helpers ------------------------ */
+
 function tierFromMsrp(price: number) {
   if (price >= 151) return 5;
   if (price >= 101) return 4;
@@ -186,49 +189,56 @@ function tierFromMsrp(price: number) {
   if (price >= 26) return 2;
   return 1;
 }
+
 function guessTierFromOpenForm(fd: FormData) {
   const msrp = Number((fd.get("msrpGuess") || "0").toString());
   return tierFromMsrp(msrp || 0);
 }
 
-/* ---------------------------- PAGE ----------------------------- */
+/* ------------------------------- PAGE ------------------------------- */
+
 export default async function SetRequestPage() {
   let poll: RequestWithSupports[] = [];
   let open: RequestWithSupports[] = [];
 
-  try {
-    poll = await prisma.setRequest.findMany({
-      where: { source: "poll", status: { in: ["collecting", "incoming"] } },
-      orderBy: [{ status: "desc" }, { createdAt: "desc" }],
-      include: { supports: true },
-      take: 10,
-    });
+  if (!DEMO_MODE) {
+    try {
+      // curated poll (limit 10)
+      poll = await prisma.setRequest.findMany({
+        where: { source: "poll", status: { in: ["collecting", "incoming"] } },
+        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+        include: { supports: true },
+        take: 10,
+      });
 
-    open = await prisma.setRequest.findMany({
-      where: { source: "open", status: { in: ["collecting", "incoming"] } },
-      orderBy: [{ createdAt: "desc" }],
-      include: { supports: true },
-      take: 6,
-    });
-  } catch (err) {
-    if (isPrismaUnavailable(err)) {
-      console.warn("[set-request] prerender: Prisma unavailable; rendering empty lists.");
-      poll = [];
-      open = [];
-    } else {
-      throw err;
+      // newest open (limit 6)
+      open = await prisma.setRequest.findMany({
+        where: { source: "open", status: { in: ["collecting", "incoming"] } },
+        orderBy: [{ createdAt: "desc" }],
+        include: { supports: true },
+        take: 6,
+      });
+    } catch (err) {
+      if (isPrismaUnavailable(err)) {
+        console.warn("[set-request] Prisma unavailable during render – falling back to empty lists.");
+        poll = [];
+        open = [];
+      } else {
+        throw err;
+      }
     }
   }
 
-  const cookieStore = await cookies();
+  const cookieStore = await cookies(); // awaiting avoids TS “Promise” complaints across Next versions
   const token = cookieStore.get("sr_token")?.value ?? "";
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
       <h1 className="text-3xl font-extrabold text-slate-900">Set Request</h1>
       <p className="mt-2 text-slate-600">
-        Vote on this week’s picks or request a specific set. When a request meets its supporter target, we move it to{" "}
-        <span className="font-medium">Incoming</span> and place it on our next purchase order.
+        Vote on this week’s picks or request a specific set. When a request meets its supporter
+        target, we move it to <span className="font-medium">Incoming</span> and place it on our next
+        purchase order.
       </p>
 
       {/* ---- Curated Poll ---- */}
@@ -238,6 +248,7 @@ export default async function SetRequestPage() {
           {poll.map((r) => (
             <RequestCard key={r.id} req={r} viewerToken={token} />
           ))}
+          {poll.length === 0 && <EmptyPlaceholder kind="poll" />}
         </div>
       </section>
 
@@ -248,6 +259,7 @@ export default async function SetRequestPage() {
           {open.map((r) => (
             <RequestCard key={r.id} req={r} viewerToken={token} />
           ))}
+          {open.length === 0 && <EmptyPlaceholder kind="open" />}
         </div>
       </section>
 
@@ -255,7 +267,8 @@ export default async function SetRequestPage() {
       <section className="mt-12">
         <h2 className="text-xl font-semibold text-slate-900">Request a Specific Set</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Tip: paste the set number. If it already exists, you’ll see it above—open it and add your vote.
+          Tip: paste the set number. If it already exists, you’ll see it above—open it and add your
+          vote.
         </p>
 
         <form action={createRequestAction} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -288,7 +301,7 @@ export default async function SetRequestPage() {
               placeholder="$99.99 or cents"
             />
             <p className="mt-1 text-xs text-slate-500">
-              You can enter cents (9999) or leave blank—we’ll try to look it up.
+              You can enter cents (e.g. 9999) or leave blank—we’ll try to look it up.
             </p>
           </div>
           <div>
@@ -299,10 +312,7 @@ export default async function SetRequestPage() {
           </div>
 
           <div className="sm:col-span-2">
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
-            >
+            <button type="submit" className="rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700">
               Submit Request
             </button>
           </div>
@@ -312,34 +322,14 @@ export default async function SetRequestPage() {
   );
 }
 
-/* ------------------------- Card component ------------------------- */
-
-async function MaybeProductLink({ setNumber }: { setNumber: number }) {
-  const p = await prisma.product.findFirst({
-    where: { setNumber, isActive: true },
-    select: { slug: true },
-  });
-  if (!p) return null;
-
-  return (
-    <div className="mt-3 text-sm">
-      <Link href={`/products/${p.slug}`} className="text-blue-700 hover:underline">
-        View details
-      </Link>
-    </div>
-  );
-}
+/* ------------------------- Card & bits ------------------------- */
 
 function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
   const { req, viewerToken } = props;
 
   const progress = computeProgress(req);
-  const alreadyVoted = req.supports.some(
-    (s) => s.userToken === viewerToken && s.type === "vote"
-  );
-  const alreadyDeposited = req.supports.some(
-    (s) => s.userToken === viewerToken && s.type === "deposit"
-  );
+  const alreadyVoted = req.supports.some((s) => s.userToken === viewerToken && s.type === "vote");
+  const alreadyDeposited = req.supports.some((s) => s.userToken === viewerToken && s.type === "deposit");
   const isIncoming = req.status === "incoming";
 
   return (
@@ -356,17 +346,14 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         <StatusPill incoming={isIncoming} />
       </div>
 
-      {/* Progress bar */}
+      {/* Progress */}
       <div className="mt-4">
         <div className="flex items-center justify-between text-xs text-slate-600">
           <span>{progress.weighted} supporters</span>
           <span>Goal: {progress.target}</span>
         </div>
         <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-blue-600 transition-all"
-            style={{ width: `${progress.pct}%` }}
-          />
+          <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress.pct}%` }} />
         </div>
       </div>
 
@@ -376,7 +363,7 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
           <button
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             disabled={alreadyVoted || isIncoming || DEMO_MODE}
-            title={DEMO_MODE ? "Disabled in demo mode" : undefined}
+            title={DEMO_MODE ? "Disabled in demo" : undefined}
           >
             {alreadyVoted ? "Voted ✓" : "Add Vote"}
           </button>
@@ -386,11 +373,7 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
           <button
             className="rounded-md border border-blue-600 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             disabled={alreadyDeposited || isIncoming || DEMO_MODE}
-            title={
-              DEMO_MODE
-                ? "Disabled in demo mode"
-                : "$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"
-            }
+            title={DEMO_MODE ? "Disabled in demo" : "$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"}
           >
             {alreadyDeposited ? "Deposited ✓" : "Add $5 Deposit"}
           </button>
@@ -403,16 +386,42 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
 }
 
 function StatusPill({ incoming }: { incoming: boolean }) {
-  if (!incoming) {
+  return incoming ? (
+    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Incoming</span>
+  ) : (
+    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Collecting</span>
+  );
+}
+
+async function MaybeProductLink({ setNumber }: { setNumber: number }) {
+  if (DEMO_MODE) return null; // don’t query DB in demo
+
+  try {
+    const p = await prisma.product.findFirst({
+      where: { setNumber, isActive: true },
+      select: { slug: true },
+    });
+    if (!p) return null;
     return (
-      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-        Collecting
-      </span>
+      <div className="mt-3 text-sm">
+        <Link href={`/product/${p.slug}`} className="text-blue-700 hover:underline">
+          View details
+        </Link>
+      </div>
     );
+  } catch (err) {
+    if (isPrismaUnavailable(err)) return null;
+    throw err;
   }
+}
+
+/* ----------------------- tiny empty state ----------------------- */
+function EmptyPlaceholder({ kind }: { kind: "poll" | "open" }) {
   return (
-    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-      Incoming
-    </span>
+    <div className="col-span-full rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
+      {DEMO_MODE
+        ? "Demo mode: requests are disabled for this deploy."
+        : `No ${kind === "poll" ? "poll" : "open"} requests yet.`}
+    </div>
   );
 }
