@@ -20,6 +20,62 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Database Setup
+
+This project uses **Prisma** for database management. The database provider is **PostgreSQL**.
+
+### Local Development
+
+For local development, the project is configured to use **SQLite** (file-based) via `.env.local`:
+```bash
+DATABASE_URL="file:./prisma/dev.db"
+```
+
+To set up locally:
+
+```bash
+# Install dependencies
+npm install
+
+# Run migrations against local SQLite
+npx prisma migrate dev
+
+# Seed the database with sample data
+npx prisma db seed
+
+# Start the dev server
+npm run dev
+```
+
+The SQLite database file will be created at `prisma/dev.db` and persists between restarts.
+
+### Production
+
+Production uses **Prisma Postgres** (a managed PostgreSQL instance). The `DATABASE_URL` is set via environment variables on Vercel.
+
+When deploying to Vercel:
+1. Add the `DATABASE_URL` environment variable in your Vercel project settings (the Prisma Postgres connection string).
+2. The `vercel.json` file automatically runs migrations and seeding on each deploy:
+   ```json
+   "installCommand": "npm install && npx prisma migrate deploy && npx prisma db seed"
+   ```
+
+### Switching Databases
+
+- **Schema provider**: Currently set to `postgresql` in `prisma/schema.prisma`.
+- **Local override**: `.env.local` uses SQLite for local development (set at project root).
+- **Production**: Set `DATABASE_URL` to the Prisma Postgres connection string in Vercel's environment variables.
+
+If you need to run a production build locally for testing:
+
+```bash
+# Set the DATABASE_URL to your Postgres connection string
+$env:DATABASE_URL = 'prisma+postgres://accelerate.prisma-data.net/?api_key=...'
+
+# Run the build
+npm run build
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
