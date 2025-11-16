@@ -10,7 +10,7 @@ type RequestWithSupports = Prisma.SetRequestGetPayload<{
   include: { supports: true };
 }>;
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 /* ---------------------- Prisma/infra helpers ---------------------- */
 

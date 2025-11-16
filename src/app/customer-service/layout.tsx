@@ -1,6 +1,6 @@
 import { CUSTOMER_SERVICE_LINKS } from "@/lib/nav";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 const NAV = CUSTOMER_SERVICE_LINKS;
 

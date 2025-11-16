@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { TIERS, type Tier } from "@/lib/tiers";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 const TIER_IDS: Tier[] = [1, 2, 3, 4, 5];
 

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
 import { TIERS, type Tier } from "@/lib/tiers";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 type Props = { params: { id: string } };
 
