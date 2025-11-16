@@ -1,8 +1,5 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install && npx prisma migrate deploy && npx prisma db seed",
-  "env": {
-    "DATABASE_URL": "file:./prisma/dev.db"
-  }
+  "installCommand": "npm install && npx prisma migrate deploy && npx prisma db seed"
 }
