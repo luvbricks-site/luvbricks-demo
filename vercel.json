@@ -1,5 +1,5 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install && npx prisma migrate deploy && npx prisma db seed"
+  "installCommand": "npm install && npx prisma migrate deploy"
 }
