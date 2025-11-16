@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 // NEW: import the sticky header wrapper and footer
 import SiteHeader from "@/components/SiteHeader"; // or "../components/SiteHeader"
@@ -17,20 +16,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ✅ CHANGED: metadata now reacts to DEMO_MODE
 export const metadata: Metadata = {
-  title: DEMO_MODE ? "LuvBricks Demo Store" : "LuvBricks",
+  title: "LuvBricks",
   description: "Build more. Spend smart.",
-  robots: DEMO_MODE
-    ? {
-        index: false,
-        follow: false,
-        nocache: true,
-      }
-    : {
-        index: true,
-        follow: true,
-      },
 };
 
 export default function RootLayout({
@@ -45,14 +33,6 @@ export default function RootLayout({
       >
         {/* Sticky Hero (announcement + header + nav) on every page */}
         <SiteHeader />
-
-        {/* ✅ NEW: global demo notice, only in DEMO_MODE */}
-        {DEMO_MODE && (
-          <div className="w-full border-b border-amber-500/40 bg-amber-500/10 py-1 text-center text-[10px] font-medium text-amber-600">
-            Demo mode preview – UI/UX only. Orders, payments, and account
-            changes are disabled in this environment.
-          </div>
-        )}
 
         {/* Page content */}
         <main className="min-h-[60vh]">{children}</main>

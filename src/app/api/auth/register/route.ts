@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, createSession } from "@/lib/auth";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 const cookieBase = {
   httpOnly: true,
@@ -23,15 +22,6 @@ const SIGNUP_ACTION = "account_create_join_email";
 const SIGNUP_POINTS = 125;
 
 export async function POST(req: Request) {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
   try {
     const body = (await req.json()) as Body;
     const firstName = (body.firstName ?? "").trim();

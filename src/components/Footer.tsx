@@ -66,15 +66,15 @@ export default function Footer() {
 
             {/* Socials */}
             <div className="mt-5 flex items-center gap-3">
-              <Link href="#" aria-label="YouTube" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
+              <Link href="https://youtube.com/@luvbricks" aria-label="YouTube" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
                 <Youtube size={18} />
               </Link>
-              <Link href="#" aria-label="TikTok" className="p-2 rounded-lg bg-white/10 hover:bg-white/15"><SiTiktok size={18} />
+              <Link href="https://tiktok.com/@luvbricks_store" aria-label="TikTok" className="p-2 rounded-lg bg-white/10 hover:bg-white/15"><SiTiktok size={18} />
               </Link>
-              <Link href="#" aria-label="Instagram" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
+              <Link href="https://instagram.com/luvbricks_store" aria-label="Instagram" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
                 <Instagram size={18} />
               </Link>
-              <Link href="#" aria-label="Facebook" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
+              <Link href="https://facebook.com/profile.php?id=61582921312265" aria-label="Facebook" className="p-2 rounded-lg bg-white/10 hover:bg-white/15">
                 <Facebook size={18} />
               </Link>
             </div>

@@ -16,7 +16,6 @@ import {
 import { notifyCartChanged } from '@/lib/cartBus';
 import { SiPaypal, SiStripe } from 'react-icons/si';
 import ShippingForm from '@/components/checkout/ShippingForm';
-import { DEMO_MODE } from '@/lib/demoMode';
 
 const LS_TAX_ZIP = 'luvbricks:taxZip';
 
@@ -257,13 +256,6 @@ export default function CartPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-8">
-      {DEMO_MODE && (
-        <div className="lg:col-span-2 mb-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
-          Demo mode: This cart shows the full LuvBricks checkout experience.
-          Orders, payments, and account changes are disabled in this demo
-          environment.
-        </div>
-      )}
 
       {/* Left: cart list */}
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -521,23 +513,14 @@ export default function CartPage() {
 
         <div className="mt-5">
           <h3 className="mb-2 text-sm font-semibold text-slate-900">
-            {DEMO_MODE
-              ? 'Checkout preview'
-              : 'Check out now!'}
           </h3>
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Stripe */}
             <button
               type="button"
-              disabled={DEMO_MODE || !hasItems || loading}
+              disabled={!hasItems || loading}
               onClick={async () => {
-                if (DEMO_MODE) {
-                  alert(
-                    'Demo mode: Checkout is disabled in this preview.'
-                  );
-                  return;
-                }
                 await window.luvbricks_saveShipTo?.();
                 alert(
                   'Stripe checkout would start here. Shipping address saved.'
@@ -551,24 +534,13 @@ export default function CartPage() {
                 aria-hidden
                 className="opacity-80"
               />
-              <span>
-                {DEMO_MODE
-                  ? 'Stripe (demo disabled)'
-                  : 'Stripe'}
-              </span>
             </button>
 
             {/* PayPal */}
             <button
               type="button"
-              disabled={DEMO_MODE || !hasItems || loading}
+              disabled={!hasItems || loading}
               onClick={async () => {
-                if (DEMO_MODE) {
-                  alert(
-                    'Demo mode: Checkout is disabled in this preview.'
-                  );
-                  return;
-                }
                 await window.luvbricks_saveShipTo?.();
                 alert(
                   'PayPal checkout would start here. Shipping address saved.'
@@ -582,11 +554,6 @@ export default function CartPage() {
                 aria-hidden
                 className="opacity-80"
               />
-              <span>
-                {DEMO_MODE
-                  ? 'PayPal (demo disabled)'
-                  : 'PayPal'}
-              </span>
             </button>
           </div>
 

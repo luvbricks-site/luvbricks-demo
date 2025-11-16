@@ -4,7 +4,6 @@
 import { useState } from 'react';
 import { addToCart } from '@/lib/cartClient';
 import { notifyCartChanged } from '@/lib/cartBus';
-import { DEMO_MODE } from '@/lib/demoMode';
 
 type Props = {
   productId: string;

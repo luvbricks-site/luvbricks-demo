@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyPassword, createSession } from "@/lib/auth";
 import { cookies } from "next/headers";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 const cookieBase = {
   httpOnly: true,
@@ -15,15 +14,6 @@ const cookieBase = {
 type Body = { email: string; password: string };
 
 export async function POST(req: Request) {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
   try {
     const { email, password } = (await req.json()) as Body;
 

@@ -2,18 +2,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromSession } from "@/lib/auth";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 export async function GET() {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
   const user = await getUserFromSession();
   if (!user) {
     return NextResponse.json({ completed: [] });

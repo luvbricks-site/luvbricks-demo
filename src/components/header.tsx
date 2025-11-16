@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 import HeaderAccount from "@/components/HeaderAccount";
 import CartBadge from "@/components/header/CartBadge";
-import { DEMO_MODE } from "@/lib/demoMode";
+
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -88,11 +88,6 @@ export default function Header() {
             </div>
           </form>
         </div>
-        {DEMO_MODE && (
-        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-500">
-          Demo
-        </span>
-   )}
 
         {/* Right: account + cart */}
         <nav className="flex items-center gap-5">

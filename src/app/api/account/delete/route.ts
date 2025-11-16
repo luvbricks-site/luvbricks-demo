@@ -3,18 +3,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
 import { clearShipTo } from "@/lib/shipTo"; // ← add
-import { DEMO_MODE } from '@/lib/demoMode';
+
 
 export async function POST() {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
+  
   try {
     const c = await cookies();
     const token = c.get("session")?.value;

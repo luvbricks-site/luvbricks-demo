@@ -9,20 +9,10 @@ import {
   clearCart as clearAll,
   type Cart,
 } from "@/lib/cart";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 /* ---------------------------------- GET ---------------------------------- */
 /** Read cart (for hydration) */
 export async function GET() {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
   const cart = await readCart(); // treat as async to satisfy TS either way
   return NextResponse.json({ ok: true, cart });
 }

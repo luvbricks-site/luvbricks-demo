@@ -3,7 +3,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { ShipTo } from "@/lib/shipTo";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 type Props = {
   onSaved?: (shipTo: ShipTo) => void;
@@ -74,15 +73,6 @@ export default function ShippingForm({ onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      if (DEMO_MODE) {
-        const demoShipTo: ShipTo = {
-          ...form,
-          updatedAt: Date.now(),
-        };
-        setForm(demoShipTo);
-        onSaved?.(demoShipTo);
-        return true;
-      }
       const r = await fetch("/api/ship-to", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -124,14 +114,6 @@ export default function ShippingForm({ onSaved }: Props) {
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
-
-      {/* [DEMO] Inline note so investors/wholesalers see this is non-production */}
-      {DEMO_MODE && (
-        <p className="mb-2 text-[10px] text-amber-500">
-          Demo mode: Enter a sample address to preview the flow. In this
-          environment, details are not used to ship real orders.
-        </p>
-      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Full name" value={form.fullName} onChange={(v) => update("fullName", v)} required />

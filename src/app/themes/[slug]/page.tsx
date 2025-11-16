@@ -2,7 +2,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
-import { DEMO_MODE } from "@/lib/demoMode";
 
 export const revalidate = 60; // ISR: refresh every minute
 
@@ -30,24 +29,19 @@ function getPrismaCode(err: unknown): string | undefined {
 export default async function ThemePage({ params }: Params) {
   const slug = params.slug;
 
-  // ---------- Load optional theme metadata ----------
+  // ---------- Load theme metadata (by slug) ----------
   let theme: ThemeMeta | null = null;
 
-  if (!DEMO_MODE) {
-    try {
-      const t = await prisma.theme.findUnique({
-        where: { slug },
-        select: { id: true, name: true },
-      });
-      theme = t ?? null;
-    } catch (err) {
-      const code = getPrismaCode(err);
-      if (code !== "P2021") {
-        // Real error in non-demo mode: surface it
-        throw err;
-      }
-      // If P2021 (Theme table missing), continue with theme = null
-    }
+  try {
+    const t = await prisma.theme.findUnique({
+      where: { slug },
+      select: { id: true, name: true },
+    });
+    theme = t ?? null;
+  } catch (err) {
+    const code = getPrismaCode(err);
+    // If Theme table is missing, continue with theme = null; otherwise surface the error
+    if (code !== "P2021") throw err;
   }
 
   // ---------- Build product filter ----------
@@ -82,7 +76,6 @@ export default async function ThemePage({ params }: Params) {
       orderBy: { name: "asc" },
       include: {
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        inventory: true,
       },
     });
 
@@ -90,22 +83,17 @@ export default async function ThemePage({ params }: Params) {
     products = result.map((p) => ({
       id: p.id,
       slug: p.slug,
-      // Normalize just in case schema/types drift; ensures `number`
       setNumber: typeof p.setNumber === "number" ? p.setNumber : Number(p.setNumber),
       name: p.name,
       msrpCents: p.msrpCents,
       images: p.images.map((img) => ({ url: img.url })),
     }));
-  } catch (err: unknown) {
+  } catch (err) {
     const code = getPrismaCode(err);
-
-    if (code === "P2021" && DEMO_MODE) {
-      // Demo + missing Product table: show empty instead of failing
-      products = [];
-    } else {
-      // Anything else: real error
-      throw err;
-    }
+    // If Product table is missing, show an empty list (route still renders);
+    // otherwise surface the error.
+    if (code !== "P2021") throw err;
+    products = [];
   }
 
   // If absolutely nothing exists, 404
@@ -124,13 +112,6 @@ export default async function ThemePage({ params }: Params) {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
       <h1 className="text-3xl font-extrabold text-slate-900">{title}</h1>
-
-      {DEMO_MODE && !theme && (
-        <p className="mt-1 text-[10px] text-amber-500">
-          Demo mode: theme page is resolved by slug only; Theme table is
-          optional.
-        </p>
-      )}
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((p) => (
@@ -151,19 +132,15 @@ export default async function ThemePage({ params }: Params) {
   );
 }
 
-/**
- * Static params for demo:
- *  - No Prisma calls here at all.
- *  - This is what fixes the P2021 build failure for /themes/[slug].
- */
+// Generate static params from the DB (with safe fallback)
 export async function generateStaticParams() {
-  return [
-    { slug: "city" },
-    { slug: "marvel" },
-    { slug: "friends" },
-    { slug: "harry-potter" },
-    { slug: "star-wars" },
-    { slug: "cmf" },
-    { slug: "duplo" },
-  ];
+  try {
+    const themes = await prisma.theme.findMany({ select: { slug: true } });
+    return themes.map((t) => ({ slug: t.slug }));
+  } catch (err) {
+    const code = getPrismaCode(err);
+    // If the Theme table isn't available during build, fall back to no prebuilt pages.
+    if (code === "P2021") return [];
+    throw err;
+  }
 }

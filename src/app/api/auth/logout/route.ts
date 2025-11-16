@@ -3,18 +3,9 @@ import { NextResponse } from "next/server";
 import { destroySession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { clearShipTo } from "@/lib/shipTo"; // ✅ clear saved shipping info on logout
-import { DEMO_MODE } from '@/lib/demoMode';
 
 export async function POST() {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
+  
   try {
     // End the server-side session (no-op safe)
     await destroySession().catch(() => {});

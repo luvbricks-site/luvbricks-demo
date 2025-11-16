@@ -5,14 +5,15 @@ import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/currency";
 import { tierLabelForPrice } from "@/lib/tiers";
 import AddToCartButton from "@/components/cart/AddToCartButton";
-import { DEMO_MODE } from "@/lib/demoMode";
+
+export const revalidate = 60; // ISR: refresh product pages every minute
 
 type Params = { params: { slug: string } };
 
 // existing local helpers/types
 type MaybeWeight = { weightLb?: number | null };
 
-// NEW: describe the shape(s) we may get back for inventory
+// inventory can be a single row or an array depending on your relation include
 type InventoryRow = { qty?: number | null; quantity?: number | null } | null | undefined;
 type ProductWithInventory = { inventory?: InventoryRow | InventoryRow[] };
 
@@ -48,9 +49,7 @@ export default async function ProductPage({ params }: Params) {
   const imageUrl = primary?.url || "/icon.png";
   const setNumberStr = String(product.setNumber ?? "");
   const weightLb =
-    "weightLb" in (product as object)
-      ? (product as MaybeWeight).weightLb ?? null
-      : null;
+    "weightLb" in (product as object) ? (product as MaybeWeight).weightLb ?? null : null;
 
   // ── Normalize inventory and derive qty + inStock (no `any`) ──────────────
   const invSource = product as unknown as ProductWithInventory;
@@ -87,12 +86,7 @@ export default async function ProductPage({ params }: Params) {
                 key={img.id}
                 className="relative aspect-[4/3] rounded-lg overflow-hidden border"
               >
-                <Image
-                  src={img.url}
-                  alt={img.alt || product.name}
-                  fill
-                  className="object-contain"
-                />
+                <Image src={img.url} alt={img.alt || product.name} fill className="object-contain" />
               </div>
             ))}
           </div>
@@ -104,9 +98,7 @@ export default async function ProductPage({ params }: Params) {
         <div className="text-xs text-slate-500">
           Set #{product.setNumber} · {product.theme.name}
         </div>
-        <h1 className="mt-1 text-3xl font-extrabold text-slate-900">
-          {product.name}
-        </h1>
+        <h1 className="mt-1 text-3xl font-extrabold text-slate-900">{product.name}</h1>
 
         <div className="mt-4 flex items-center gap-3">
           <span className="text-2xl font-semibold">{msrp}</span>
@@ -136,7 +128,7 @@ export default async function ProductPage({ params }: Params) {
             tier={tierNum}
             msrpCents={product.msrpCents}
             weightLb={weightLb}
-            inStock={inStock}  // ← activates/deactivates correctly
+            inStock={inStock}
           />
 
           {/* “Add to Bundle” can be wired later */}
@@ -150,36 +142,8 @@ export default async function ProductPage({ params }: Params) {
 }
 
 export async function generateStaticParams() {
-  // In demo mode, don't rely on the database at build time.
-  // Option A: return an empty list (no pre-built product pages).
-  // Option B: hardcode a few known slugs you want pre-rendered.
-  if (DEMO_MODE) {
-    return [
-      // { slug: "some-demo-product-slug" },
-      // add any you like, or leave empty:
-    ];
-  }
-
-  // Non-demo: try to read from DB, but fail soft if the table is missing.
-  try {
-    const products = await prisma.product.findMany({
-      select: { slug: true },
-    });
-    return products.map((p) => ({ slug: p.slug }));
-  } catch (err: unknown) {
-    const code =
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as { code?: string }).code;
-
-    // If the Product table/schema is missing in this environment,
-    // avoid killing the build – just don't pre-generate any slugs.
-    if (code === "P2021") {
-      return [];
-    }
-
-    // Anything else is a real error.
-    throw err;
-  }
+  const products = await prisma.product.findMany({
+    select: { slug: true },
+  });
+  return products.map((p) => ({ slug: p.slug }));
 }

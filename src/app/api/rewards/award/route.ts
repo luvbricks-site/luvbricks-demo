@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromSession } from "@/lib/auth";
-import { DEMO_MODE } from '@/lib/demoMode';
 
 /**
  * Built-in catalog of supported actions. If a RewardRule isn't found in DB,
@@ -21,15 +20,6 @@ const RULES: Record<
 };
 
 export async function POST(req: Request) {
-  if (DEMO_MODE) {
-    return NextResponse.json(
-      {
-        error:
-          'Demo mode: reorder is disabled in this preview environment.',
-      },
-      { status: 403 }
-    );
-  }
   try {
     const { action, sourceId } = (await req.json()) as { action: string; sourceId?: string };
 

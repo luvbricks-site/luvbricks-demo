@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 import { computeProgress, money } from "@/lib/requests";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { DEMO_MODE } from "@/lib/demoMode";
 
 type RequestWithSupports = Prisma.SetRequestGetPayload<{
   include: { supports: true };
@@ -67,12 +66,6 @@ async function getOrCreateUserToken(): Promise<string> {
 async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
   "use server";
 
-  // In demo, pretend success and just refresh the page.
-  if (DEMO_MODE) {
-    revalidatePath("/set-request");
-    return;
-  }
-
   const token = await getOrCreateUserToken();
 
   try {
@@ -106,7 +99,6 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
     }
   } catch (err) {
     if (!isPrismaUnavailable(err)) throw err; // legitimate bug -> surface
-    // demo / missing DB -> ignore
   }
 
   revalidatePath("/set-request");
@@ -114,11 +106,6 @@ async function voteAction(setRequestId: string, kind: "vote" | "deposit") {
 
 async function createRequestAction(formData: FormData) {
   "use server";
-
-  if (DEMO_MODE) {
-    revalidatePath("/set-request");
-    return;
-  }
 
   const token = await getOrCreateUserToken();
 
@@ -174,7 +161,6 @@ async function createRequestAction(formData: FormData) {
     });
   } catch (err) {
     if (!isPrismaUnavailable(err)) throw err;
-    // demo / missing DB -> ignore
   }
 
   revalidatePath("/set-request");
@@ -201,35 +187,33 @@ export default async function SetRequestPage() {
   let poll: RequestWithSupports[] = [];
   let open: RequestWithSupports[] = [];
 
-  if (!DEMO_MODE) {
-    try {
-      // curated poll (limit 10)
-      poll = await prisma.setRequest.findMany({
-        where: { source: "poll", status: { in: ["collecting", "incoming"] } },
-        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
-        include: { supports: true },
-        take: 10,
-      });
+  try {
+    // curated poll (limit 10)
+    poll = await prisma.setRequest.findMany({
+      where: { source: "poll", status: { in: ["collecting", "incoming"] } },
+      orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+      include: { supports: true },
+      take: 10,
+    });
 
-      // newest open (limit 6)
-      open = await prisma.setRequest.findMany({
-        where: { source: "open", status: { in: ["collecting", "incoming"] } },
-        orderBy: [{ createdAt: "desc" }],
-        include: { supports: true },
-        take: 6,
-      });
-    } catch (err) {
-      if (isPrismaUnavailable(err)) {
-        console.warn("[set-request] Prisma unavailable during render – falling back to empty lists.");
-        poll = [];
-        open = [];
-      } else {
-        throw err;
-      }
+    // newest open (limit 6)
+    open = await prisma.setRequest.findMany({
+      where: { source: "open", status: { in: ["collecting", "incoming"] } },
+      orderBy: [{ createdAt: "desc" }],
+      include: { supports: true },
+      take: 6,
+    });
+  } catch (err) {
+    if (isPrismaUnavailable(err)) {
+      console.warn("[set-request] Prisma unavailable during render – falling back to empty lists.");
+      poll = [];
+      open = [];
+    } else {
+      throw err;
     }
   }
 
-  const cookieStore = await cookies(); // awaiting avoids TS “Promise” complaints across Next versions
+  const cookieStore = await cookies();
   const token = cookieStore.get("sr_token")?.value ?? "";
 
   return (
@@ -362,8 +346,7 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         <form action={voteAction.bind(null, req.id, "vote")}>
           <button
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-            disabled={alreadyVoted || isIncoming || DEMO_MODE}
-            title={DEMO_MODE ? "Disabled in demo" : undefined}
+            disabled={alreadyVoted || isIncoming}
           >
             {alreadyVoted ? "Voted ✓" : "Add Vote"}
           </button>
@@ -372,8 +355,8 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
         <form action={voteAction.bind(null, req.id, "deposit")}>
           <button
             className="rounded-md border border-blue-600 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-            disabled={alreadyDeposited || isIncoming || DEMO_MODE}
-            title={DEMO_MODE ? "Disabled in demo" : "$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"}
+            disabled={alreadyDeposited || isIncoming}
+            title="$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"
           >
             {alreadyDeposited ? "Deposited ✓" : "Add $5 Deposit"}
           </button>
@@ -394,8 +377,6 @@ function StatusPill({ incoming }: { incoming: boolean }) {
 }
 
 async function MaybeProductLink({ setNumber }: { setNumber: number }) {
-  if (DEMO_MODE) return null; // don’t query DB in demo
-
   try {
     const p = await prisma.product.findFirst({
       where: { setNumber, isActive: true },
@@ -419,9 +400,7 @@ async function MaybeProductLink({ setNumber }: { setNumber: number }) {
 function EmptyPlaceholder({ kind }: { kind: "poll" | "open" }) {
   return (
     <div className="col-span-full rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
-      {DEMO_MODE
-        ? "Demo mode: requests are disabled for this deploy."
-        : `No ${kind === "poll" ? "poll" : "open"} requests yet.`}
+      {`No ${kind === "poll" ? "poll" : "open"} requests yet.`}
     </div>
   );
 }
