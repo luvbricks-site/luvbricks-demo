@@ -7,10 +7,12 @@
 - Pages are routed via `/src/app/[route]/page.tsx` (e.g., `/products/[slug]/page.tsx`).
 
 ## Key Workflows
-- **Development:** Use `npm run dev` to start the local server.
-- **Database:** Prisma migrations are managed in `/prisma/migrations`. Use `npx prisma migrate dev` after editing `schema.prisma`.
-- **Seeding:** Run `npx prisma db seed` to seed the database using `/prisma/seed.cjs`.
-- **Scripts:** Utility scripts live in `/scripts` (e.g., `fix-slugs.mjs`). Run with `node scripts/<script>.mjs`.
+- **Development:** Use `npm run dev` to start the local server (uses SQLite via `.env.local`).
+- **Database:** 
+  - **Local:** SQLite (`file:./prisma/dev.db`) configured in `.env.local`.
+  - **Production:** Prisma Postgres configured via `DATABASE_URL` environment variable on Vercel.
+  - Always run migrations after schema changes: `npx prisma migrate dev`
+  - Seed with: `npx prisma db seed`
 
 ## Patterns & Conventions
 - **Component Structure:** Prefer functional React components. Shared UI primitives are in `/src/components/ui`.
