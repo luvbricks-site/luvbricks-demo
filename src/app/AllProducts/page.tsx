@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
 import type { ComponentProps } from "react";
 
-export const revalidate = 60; // ISR refresh cadence (server renders + cache)
+export const dynamic = "force-dynamic"; // Disable static generation
 
 type SearchParams = {
   sort?: "price_asc" | "price_desc";
