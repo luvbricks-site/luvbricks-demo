@@ -6,6 +6,8 @@ import { formatCents } from "@/lib/currency";
 import { tierLabelForPrice } from "@/lib/tiers";
 import AddToCartButton from "@/components/cart/AddToCartButton";
 
+export const dynamic = "force-dynamic"; // Disable static generation to avoid build-time DB queries
+
 export const revalidate = 60; // ISR: refresh product pages every minute
 
 type Params = { params: { slug: string } };
@@ -139,11 +141,4 @@ export default async function ProductPage({ params }: Params) {
       </section>
     </main>
   );
-}
-
-export async function generateStaticParams() {
-  const products = await prisma.product.findMany({
-    select: { slug: true },
-  });
-  return products.map((p) => ({ slug: p.slug }));
 }

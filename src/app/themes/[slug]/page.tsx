@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
 
+export const dynamic = "force-dynamic"; // Disable static generation to avoid build-time DB queries
+
 export const revalidate = 60; // ISR: refresh every minute
 
 type Params = { params: { slug: string } };
@@ -132,15 +134,4 @@ export default async function ThemePage({ params }: Params) {
   );
 }
 
-// Generate static params from the DB (with safe fallback)
-export async function generateStaticParams() {
-  try {
-    const themes = await prisma.theme.findMany({ select: { slug: true } });
-    return themes.map((t) => ({ slug: t.slug }));
-  } catch (err) {
-    const code = getPrismaCode(err);
-    // If the Theme table isn't available during build, fall back to no prebuilt pages.
-    if (code === "P2021") return [];
-    throw err;
-  }
-}
+// Removed generateStaticParams to avoid build-time DB queries with dynamic = "force-dynamic"
