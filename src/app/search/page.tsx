@@ -35,17 +35,15 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const qSlug = slugify(raw);
   const qNum = /^\d+$/.test(raw) ? Number(raw) : undefined;
 
-  // NOTE:
-  // - No `mode: "insensitive"` here because it's not supported on SQLite.
-  // - We filter the related theme with `theme: { is: { name: { contains: raw } } }`.
+  // NOTE: Using mode: "insensitive" for case-insensitive search (supported on PostgreSQL)
   const products = await prisma.product.findMany({
     where: {
       isActive: true,
       OR: [
-        { name: { contains: raw } },
-        { slug: { contains: qSlug } },
+        { name: { contains: raw, mode: "insensitive" } },
+        { slug: { contains: qSlug, mode: "insensitive" } },
         ...(qNum ? [{ setNumber: qNum }] : []),
-        { theme: { is: { name: { contains: raw } } } },
+        { theme: { is: { name: { contains: raw, mode: "insensitive" } } } },
       ],
     },
     orderBy: { name: "asc" },

@@ -28,7 +28,7 @@ export default function Header() {
         scrolled ? "md:shadow-sm" : "",
       ].join(" ")}
     >
-      <div className="mx-auto max-w-7xl px-3 md:px-4 pt-2 pb-1 md:pt-5 md:pb-3 flex items-center gap-4 md:gap-6">
+      <div className="mx-auto max-w-7xl px-3 md:px-4 pt-3 md:pt-5 pb-2 md:pb-3 flex items-center gap-3 md:gap-6">
         {/* Left: Logo */}
         <Link
           href="/"
@@ -38,10 +38,9 @@ export default function Header() {
           <Image
             src="/brand/Finished_LB_Brand_transparent.png"
             alt="LuvBricks"
-            width={140}
-            height={32}
+            width={180}
+            height={40}
             priority
-            className="md:w-[180px] md:h-[40px] w-[140px] h-[32px]"
           />
         </Link>
 
