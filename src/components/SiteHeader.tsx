@@ -22,10 +22,11 @@ export default function SiteHeader() {
   return (
     <div
       className={[
-        "sticky top-0 z-50",
+        "md:sticky md:top-0 z-50",
+        // sticky on desktop only, scroll away on mobile
         // subtle translucent bg so it looks great over any content
         "bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70",
-        scrolled ? "shadow-[0_1px_0_0_rgba(15,23,42,0.08)]" : "shadow-none",
+        scrolled ? "md:shadow-[0_1px_0_0_rgba(15,23,42,0.08)]" : "shadow-none",
       ].join(" ")}
     >
       <AnnouncementBar />
