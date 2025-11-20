@@ -61,12 +61,12 @@ export default function ProductCard({ p }: { p: ProductLite }) {
         </h3>
 
         {/* Bottom row: price (left) + pill(s) (right) */}
-        <div className="mt-3 flex items-center justify-between">
+        <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="text-slate-900 font-semibold">
             {formatCents(p.msrpCents)}
           </div>
 
-          <div className="ml-3 flex items-center gap-2">
+          <div className="ml-0 sm:ml-3 flex flex-wrap items-center gap-2">
             {/* Tier is always shown */}
             <span className="shrink-0 rounded-full bg-blue-50 text-blue-700 text-xs px-2.5 py-1">
               {tier} eligible

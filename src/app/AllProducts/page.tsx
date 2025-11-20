@@ -134,17 +134,17 @@ export default async function AllProductsPage({
   const currentAge = Number.isFinite(ageMin) && ageMin > 0 ? String(ageMin) : "";
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
-      <h1 className="text-3xl font-extrabold text-slate-900">All Products</h1>
+    <main className="mx-auto max-w-7xl px-3 md:px-4 py-6 md:py-8">
+      <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900">All Products</h1>
 
       {/* Filters – simple GET form so URL reflects the state */}
-      <form className="mt-4 flex flex-wrap items-end gap-3" method="get">
+      <form className="mt-4 grid grid-cols-1 md:flex md:flex-wrap md:items-end gap-3 md:gap-3" method="get">
         <div className="flex flex-col">
           <label className="text-xs text-slate-500">Sort by price</label>
           <select
             name="sort"
             defaultValue={currentSort}
-            className="min-w-[140px] rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-full md:min-w-[140px] rounded-md border border-slate-300 px-3 py-2 text-sm"
           >
             <option value="price_asc">Low → High</option>
             <option value="price_desc">High → Low</option>
@@ -156,7 +156,7 @@ export default async function AllProductsPage({
           <select
             name="theme"
             defaultValue={currentTheme}
-            className="min-w-[180px] rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-full md:min-w-[180px] rounded-md border border-slate-300 px-3 py-2 text-sm"
           >
             <option value="all">All themes</option>
             {themeOptions.map((t) => (
@@ -176,13 +176,13 @@ export default async function AllProductsPage({
             step={1}
             defaultValue={currentAge}
             placeholder="Any"
-            className="w-[100px] rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-full md:w-[100px] rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
 
         <button
           type="submit"
-          className="h-[38px] rounded-md bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
+          className="h-[38px] rounded-md bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 w-full md:w-auto"
         >
           Apply
         </button>
