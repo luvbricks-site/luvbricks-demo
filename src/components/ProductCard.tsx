@@ -1,7 +1,7 @@
-import Image from "next/image";
+﻿import Image from "next/image";
 import Link from "next/link";
 import { formatCents } from "@/lib/currency";
-import { tierLabelForPrice } from "@/lib/tiers";
+import { getTierForPrice, tierLabelForPrice } from "@/lib/tiers";
 
 type ProductLite = {
   slug: string;
@@ -12,17 +12,22 @@ type ProductLite = {
   themeSlug?: string;
 
   /** Optional stock hints — pass one of these from your list queries */
-  qty?: number | null;        // e.g. inventory.qty
-  inStock?: boolean | null;   // or a precomputed flag
+  stockLevel?: number | null; // from catalog/products.json
+  qty?: number | null; // e.g. inventory.qty
+  inStock?: boolean | null; // or a precomputed flag
 };
 
 export default function ProductCard({ p }: { p: ProductLite }) {
-  const tier = tierLabelForPrice(p.msrpCents / 100);
+  const price = p.msrpCents / 100;
+  const tier = getTierForPrice(price);
+  const tierLabel = tierLabelForPrice(price);
 
-  // Decide out-of-stock (prefer explicit boolean; otherwise, infer from qty if present)
+  // Decide out-of-stock (prefer catalog stockLevel if present)
   const outOfStock =
-    (typeof p.inStock === "boolean" ? !p.inStock : false) ||
-    (typeof p.qty === "number" ? p.qty <= 0 : false);
+    (typeof p.stockLevel === "number"
+      ? p.stockLevel <= 0
+      : (typeof p.inStock === "boolean" ? !p.inStock : false) ||
+        (typeof p.qty === "number" ? p.qty <= 0 : false));
 
   return (
     <Link
@@ -67,10 +72,16 @@ export default function ProductCard({ p }: { p: ProductLite }) {
           </div>
 
           <div className="ml-0 sm:ml-3 flex flex-wrap items-center gap-2">
-            {/* Tier is always shown */}
-            <span className="shrink-0 rounded-full bg-blue-50 text-blue-700 text-xs px-2.5 py-1">
-              {tier} eligible
-            </span>
+            {/* Tier badge */}
+            {tier === 0 ? (
+              <span className="shrink-0 rounded-full bg-slate-100 text-slate-700 text-xs px-2.5 py-1">
+                MSRP only
+              </span>
+            ) : (
+              <span className="shrink-0 rounded-full bg-blue-50 text-blue-700 text-xs px-2.5 py-1">
+                {tierLabel} eligible
+              </span>
+            )}
 
             {/* OOS appears in addition, when applicable */}
             {outOfStock && (
@@ -87,3 +98,4 @@ export default function ProductCard({ p }: { p: ProductLite }) {
     </Link>
   );
 }
+

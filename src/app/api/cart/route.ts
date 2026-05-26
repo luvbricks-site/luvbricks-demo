@@ -1,5 +1,6 @@
-// src/app/api/cart/route.ts
+﻿// src/app/api/cart/route.ts
 import { NextResponse } from "next/server";
+import type { TierOrNone } from "@/lib/tiers";
 import {
   readCart,
   writeCart,
@@ -24,7 +25,7 @@ type AddItemInput = {
   setNumber: string;
   name: string;
   imageUrl: string;
-  tier: 1 | 2 | 3 | 4 | 5;
+  tier: TierOrNone;
   msrpCents: number;
   qty: number;
   weightLb?: number | null;
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
 }
 
 /* -------------------------------- PATCH ---------------------------------- */
-/** Set qty for a row id (≤0 removes the row) */
+/** Set qty for a row id (â‰¤0 removes the row) */
 export async function PATCH(req: Request) {
   try {
     const { id, qty } = (await req.json()) as { id: string; qty: number };
@@ -98,7 +99,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ ok: true, cart });
     }
 
-    // No id → clear all
+    // No id â†’ clear all
     const empty = clearAll();
     await writeCart(empty);
     return NextResponse.json({ ok: true, cart: empty });
@@ -106,3 +107,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 }
+
+
+

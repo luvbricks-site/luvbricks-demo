@@ -1,16 +1,17 @@
-import { getTierForPrice } from "./tiers";
+﻿import { getTierForPrice, type Tier } from "./tiers";
 
 export type CartItem = { id:string; set:number; name:string; msrp:number; qty:number };
 
 export function calcBundleSavings(items:CartItem[]){
-  const countByTier = new Map<number, number>();
+  const countByTier = new Map<Tier, number>();
   items.forEach(i=>{
     const t = getTierForPrice(i.msrp);
+    if (t === 0) return;
     countByTier.set(t, (countByTier.get(t) ?? 0) + i.qty);
   });
 
-  const pctByTier = new Map<number, number>([
-    [1, 0.06],[2, 0.08],[3, 0.10],[4, 0.11],[5, 0.13]
+  const pctByTier = new Map<Tier, number>([
+    [1, 0.08], [2, 0.06], [3, 0.05], [4, 0.03]
   ]);
 
   let savings = 0;
@@ -25,3 +26,4 @@ export function calcBundleSavings(items:CartItem[]){
 
   return { qualified: savings > 0, savings: Math.round(savings*100)/100 };
 }
+

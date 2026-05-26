@@ -77,6 +77,7 @@ model Order {
   trackingUrl    String?
 
   createdAt      DateTime @default(now())
+  channel   String @default("WEB")
 }
 
 /* =========================
@@ -108,10 +109,12 @@ model Product {
   themeId     String
   theme       Theme          @relation(fields: [themeId], references: [id])
   msrpCents   Int
+  webPriceCents  Int        // your selling price
+  isActive       Boolean    @default(true) // hide from website if false
+  shortName      String?    // nice display name if different from full Lego title
   ageMin      Int?
   ageMax      Int?
   pieces      Int?
-  isActive    Boolean        @default(true)
   images      ProductImage[]
   inventory   Inventory[]
   createdAt   DateTime       @default(now())

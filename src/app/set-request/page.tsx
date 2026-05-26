@@ -1,4 +1,4 @@
-// src/app/set-request/page.tsx
+﻿// src/app/set-request/page.tsx
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -37,10 +37,15 @@ function prismaMessage(err: unknown): string {
 function isPrismaUnavailable(err: unknown): boolean {
   const code = getPrismaCode(err);
   const msg = prismaMessage(err);
+  const name =
+    typeof err === "object" && err !== null && "name" in err
+      ? String((err as { name?: unknown }).name)
+      : "";
   // P2021: table does not exist
   // "Unable to open the database file" / PrismaClientInitializationError: sqlite file not present/locked during build
   return (
     code === "P2021" ||
+    name === "PrismaClientInitializationError" ||
     msg.includes("Unable to open the database file") ||
     msg.includes("PrismaClientInitializationError")
   );
@@ -146,8 +151,8 @@ async function createRequestAction(formData: FormData) {
             source: "open",
             status: "collecting",
             // default thresholds (adjust as you like)
-            thresholdVotes: [0, 100, 35, 23, 12, 6][tier] || 20,
-            thresholdDepos: [0, 45, 15, 10, 5, 3][tier] || 10,
+            thresholdVotes: [0, 35, 23, 12, 6][tier] || 20,
+            thresholdDepos: [0, 15, 10, 5, 3][tier] || 10,
           },
         })
       ).id;
@@ -169,11 +174,12 @@ async function createRequestAction(formData: FormData) {
 /* ------------------------ tier helpers ------------------------ */
 
 function tierFromMsrp(price: number) {
-  if (price >= 151) return 5;
-  if (price >= 101) return 4;
-  if (price >= 61) return 3;
-  if (price >= 26) return 2;
-  return 1;
+  if (price < 26) return 0;
+  if (price <= 60.99) return 1;
+  if (price <= 100.99) return 2;
+  if (price <= 150.99) return 3;
+  if (price <= 300) return 4;
+  return 0;
 }
 
 function guessTierFromOpenForm(fd: FormData) {
@@ -205,7 +211,7 @@ export default async function SetRequestPage() {
     });
   } catch (err) {
     if (isPrismaUnavailable(err)) {
-      console.warn("[set-request] Prisma unavailable during render – falling back to empty lists.");
+      console.warn("[set-request] Prisma unavailable during render â€“ falling back to empty lists.");
       poll = [];
       open = [];
     } else {
@@ -220,7 +226,7 @@ export default async function SetRequestPage() {
     <main className="mx-auto max-w-7xl px-4 py-10">
       <h1 className="text-3xl font-extrabold text-slate-900">Set Request</h1>
       <p className="mt-2 text-slate-600">
-        Vote on this week’s picks or request a specific set. When a request meets its supporter
+        Vote on this weekâ€™s picks or request a specific set. When a request meets its supporter
         target, we move it to <span className="font-medium">Incoming</span> and place it on our next
         purchase order.
       </p>
@@ -251,7 +257,7 @@ export default async function SetRequestPage() {
       <section className="mt-12">
         <h2 className="text-xl font-semibold text-slate-900">Request a Specific Set</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Tip: paste the set number. If it already exists, you’ll see it above—open it and add your
+          Tip: paste the set number. If it already exists, youâ€™ll see it aboveâ€”open it and add your
           vote.
         </p>
 
@@ -285,7 +291,7 @@ export default async function SetRequestPage() {
               placeholder="$99.99 or cents"
             />
             <p className="mt-1 text-xs text-slate-500">
-              You can enter cents (e.g. 9999) or leave blank—we’ll try to look it up.
+              You can enter cents (e.g. 9999) or leave blankâ€”weâ€™ll try to look it up.
             </p>
           </div>
           <div>
@@ -323,8 +329,8 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
           <div className="text-sm text-slate-500">#{req.setNumber}</div>
           <h3 className="text-lg font-semibold text-slate-900">{req.name}</h3>
           <div className="mt-0.5 text-sm text-slate-600">
-            {req.theme ? `${req.theme} • ` : ""}
-            {req.msrpCents ? money(req.msrpCents) : "MSRP TBA"} • Tier {req.tier}
+            {req.theme ? `${req.theme} â€¢ ` : ""}
+            {req.msrpCents ? money(req.msrpCents) : "MSRP TBA"} â€¢ {req.tier === 0 ? "MSRP only" : `Tier ${req.tier}`}
           </div>
         </div>
         <StatusPill incoming={isIncoming} />
@@ -348,7 +354,7 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             disabled={alreadyVoted || isIncoming}
           >
-            {alreadyVoted ? "Voted ✓" : "Add Vote"}
+            {alreadyVoted ? "Voted âœ“" : "Add Vote"}
           </button>
         </form>
 
@@ -356,9 +362,9 @@ function RequestCard(props: { req: RequestWithSupports; viewerToken: string }) {
           <button
             className="rounded-md border border-blue-600 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             disabled={alreadyDeposited || isIncoming}
-            title="$5 deposit – applied as store credit when stocked (refundable if not stocked in time)"
+            title="$5 deposit â€“ applied as store credit when stocked (refundable if not stocked in time)"
           >
-            {alreadyDeposited ? "Deposited ✓" : "Add $5 Deposit"}
+            {alreadyDeposited ? "Deposited âœ“" : "Add $5 Deposit"}
           </button>
         </form>
       </div>
@@ -404,3 +410,5 @@ function EmptyPlaceholder({ kind }: { kind: "poll" | "open" }) {
     </div>
   );
 }
+
+

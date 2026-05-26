@@ -1,4 +1,4 @@
-// src/app/bundle/page.tsx
+﻿// src/app/bundle/page.tsx
 import Link from "next/link";
 
 export const metadata = {
@@ -18,15 +18,16 @@ export default function BundleProgramPage() {
           <strong> Bundle Discount</strong> is applied at checkout automatically. Line-item
           prices remain at MSRP (collector-safe); the savings appear as an order-level
           discount. Best of all, bundle savings <strong>stack with LuvPoints</strong> redemptions,
-          so you can combine your bundle with a points reward for extra value. 
+          so you can combine your bundle with a points reward for extra value.
         </p>
 
         <ul className="mt-4 list-disc pl-5 text-sm text-slate-700 space-y-1.5">
-            <li>Bundle discounts are <strong>available</strong> for <strong>non registered guests</strong></li>
+          <li>Bundle discounts are <strong>available</strong> for <strong>non registered guests</strong></li>
           <li>Discount triggers when <strong>3+ sets</strong> in the same price tier are in the cart.</li>
           <li>Shown at checkout as an order-level “Bundle Discount.”</li>
           <li>Works alongside LuvPoints—redeem points and keep your bundle savings.</li>
           <li>Line-item prices stay at MSRP.</li>
+          <li>Items under $26 are MSRP-only and do not qualify for bundle discounts.</li>
         </ul>
       </header>
 
@@ -51,38 +52,31 @@ export default function BundleProgramPage() {
             <tbody className="divide-y divide-slate-200">
               <tr>
                 <td className="px-4 py-3 font-medium text-slate-900">1</td>
-                <td className="px-4 py-3">$4.99 – $25.99</td>
-                <td className="px-4 py-3">9%</td>
-                <td className="px-4 py-3">10%</td>
-                <td className="px-4 py-3">11%</td>
+                <td className="px-4 py-3">$26 – $60.99</td>
+                <td className="px-4 py-3">3%</td>
+                <td className="px-4 py-3">4%</td>
+                <td className="px-4 py-3">5%</td>
               </tr>
               <tr>
                 <td className="px-4 py-3 font-medium text-slate-900">2</td>
-                <td className="px-4 py-3">$26 – $60.99</td>
-                <td className="px-4 py-3">8%</td>
-                <td className="px-4 py-3">9%</td>
-                <td className="px-4 py-3">10%</td>
+                <td className="px-4 py-3">$61 – $100.99</td>
+                <td className="px-4 py-3">5%</td>
+                <td className="px-4 py-3">6%</td>
+                <td className="px-4 py-3">7%</td>
               </tr>
               <tr>
                 <td className="px-4 py-3 font-medium text-slate-900">3</td>
-                <td className="px-4 py-3">$61 – $100.99</td>
+                <td className="px-4 py-3">$101 – $150.99</td>
                 <td className="px-4 py-3">6%</td>
                 <td className="px-4 py-3">7%</td>
                 <td className="px-4 py-3">8%</td>
               </tr>
               <tr>
                 <td className="px-4 py-3 font-medium text-slate-900">4</td>
-                <td className="px-4 py-3">$101 – $150.99</td>
-                <td className="px-4 py-3">5%</td>
-                <td className="px-4 py-3">6%</td>
-                <td className="px-4 py-3">7%</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3 font-medium text-slate-900">5</td>
                 <td className="px-4 py-3">$151 – $300</td>
-                <td className="px-4 py-3">3%</td>
-                <td className="px-4 py-3">4%</td>
-                <td className="px-4 py-3">5%</td>
+                <td className="px-4 py-3">8%</td>
+                <td className="px-4 py-3">9%</td>
+                <td className="px-4 py-3">10%</td>
               </tr>
             </tbody>
           </table>
@@ -118,3 +112,4 @@ export default function BundleProgramPage() {
     </main>
   );
 }
+

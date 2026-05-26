@@ -1,14 +1,15 @@
-// src/lib/cart.ts
+﻿// src/lib/cart.ts
 import { cookies } from "next/headers";
 import { createHmac, randomUUID } from "crypto";
+import type { TierOrNone } from "./tiers";
 
 export type CartItem = {
   id: string;                    // cart-row id (not product id)
   productId: string;             // your product id
-  setNumber: string;             // “60384”
+  setNumber: string;             // â€œ60384â€
   name: string;                  // full product name
   imageUrl: string;              // small img shown in cart
-  tier: 1 | 2 | 3 | 4 | 5;       // bundle tier
+  tier: TierOrNone;       // bundle tier
   msrpCents: number;             // MSRP in cents
   qty: number;
   weightLb?: number | null;
@@ -145,3 +146,6 @@ export function removeRow(cart: Cart, id: string): Cart {
 export function clearCart(): Cart {
   return { items: [], updatedAt: Date.now() };
 }
+
+
+

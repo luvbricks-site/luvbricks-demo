@@ -1,5 +1,4 @@
 // src/app/AllProducts/page.tsx
-import { prisma } from "@/lib/db";
 import ProductCard from "@/components/ProductCard";
 import type { ComponentProps } from "react";
 
@@ -8,36 +7,60 @@ export const dynamic = "force-dynamic"; // Disable static generation
 type SearchParams = {
   sort?: "price_asc" | "price_desc";
   theme?: string; // theme slug
-  age?: string;   // minimum age (years), e.g. "6"
+  age?: string; // minimum age (years), e.g. "6"
 };
 
 // What ProductCard expects
 type ProductLite = ComponentProps<typeof ProductCard>["p"];
 
-/* ----------------------------- safe readers ----------------------------- */
+type CatalogProduct = {
+  sku: string;
+  name: string;
+  slug: string;
+  msrpCents: number;
+  isActive: boolean;
+  setNumber: number;
+  theme: string;
+  pieceCount?: number | null;
+  ageMinimum?: number | null;
+  primaryImagePath?: string | null;
+  stockLevel?: number | null;
+  reorderPoint?: number | null;
+};
 
-function readThemeSlug(p: { theme?: { slug?: string | null } | null } & Record<string, unknown>): string | undefined {
-  // Prefer relation if present
-  const rel = p.theme?.slug ?? undefined;
-  if (rel) return rel;
+/* ----------------------------- utils ----------------------------- */
 
-  // Fallback to a legacy denormalized column if the schema had one
-  const legacy = (p as unknown as { themeSlug?: string | null }).themeSlug;
-  return legacy ?? undefined;
+function backendBase(): string {
+  return (
+    process.env.BACKEND_API_BASE ||
+    process.env.NEXT_PUBLIC_BACKEND_BASE ||
+    "http://localhost:4000"
+  ).replace(/\/$/, "");
 }
 
-function readAgeMin(obj: Record<string, unknown>): number | null {
-  // Handle a few likely schema variations without using `any`
-  const tryKeys = ["ageMin", "minAge", "minAgeYears", "age"];
-  for (const k of tryKeys) {
-    const v = obj[k];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string") {
-      const n = Number(v);
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return null;
+function joinUrl(base: string, p: string) {
+  const clean = p.replace(/^\/+/, "");
+  return `${base}/${clean}`;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+  return (await r.json()) as T;
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function readAgeMin(p: CatalogProduct): number | null {
+  return typeof p.ageMinimum === "number" && Number.isFinite(p.ageMinimum)
+    ? p.ageMinimum
+    : null;
 }
 
 /* --------------------------------- page --------------------------------- */
@@ -47,39 +70,41 @@ export default async function AllProductsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  // Pull themes for the filter dropdown. If Theme table didn’t exist in some
-  // earlier local DBs, we still gracefully continue by deriving from products.
-  const [productsRaw, themesRaw] = await Promise.all([
-    prisma.product.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-      include: {
-        images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        theme: { select: { slug: true, name: true } },
-        inventory: { orderBy: { sku: "asc" }, take: 1 },
-      },
-    }),
-    prisma.theme
-      .findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, slug: true } })
-      .catch(() => [] as { id: string; name: string; slug: string }[]),
-  ]);
+  const base = backendBase();
 
-  // Map to just what the card needs
-  let items: ProductLite[] = productsRaw.map((p) => ({
-    slug: p.slug,
-    // ensure number even if an older DB stored it as text
-    setNumber: typeof p.setNumber === "number" ? p.setNumber : Number(p.setNumber),
-    name: p.name,
-    msrpCents: p.msrpCents,
-    imageUrl: p.images[0]?.url ?? undefined,
-    themeSlug: readThemeSlug(p),
-    // map simple inventory hints (seed uses `SKU-<setNumber>` inventory rows)
-    qty: typeof p.inventory?.[0]?.qty === "number" ? p.inventory[0].qty : undefined,
-    inStock:
-      p.inventory?.[0]?.stockStatus != null
-        ? (p.inventory[0].stockStatus as unknown) === "IN_STOCK"
-        : undefined,
-  }));
+  // 1) Pull products from backend catalog JSON
+  const productsRaw = await fetchJson<CatalogProduct[]>(
+    joinUrl(base, "/catalog/products")
+  );
+
+  // Only active products (mirrors your previous Prisma filter)
+  const active = productsRaw.filter((p) => p && p.isActive);
+
+  // Map to just what the card needs (same fields you used before)
+  let items: ProductLite[] = active.map((p) => {
+    const stockLevel =
+      typeof p.stockLevel === "number" && Number.isFinite(p.stockLevel)
+        ? p.stockLevel
+        : null;
+
+    const normalizedPath = p.primaryImagePath
+      ? p.primaryImagePath.replace(/\\/g, "/")
+      : null;
+
+    // NOTE: If ProductCard uses next/image and you get “Invalid src prop”,
+    // you’ll need to add localhost:4000 to next.config remotePatterns.
+    const imageUrl = normalizedPath ? joinUrl(base, normalizedPath) : undefined;
+
+    return {
+      slug: p.slug,
+      setNumber: typeof p.setNumber === "number" ? p.setNumber : Number(p.setNumber),
+      name: p.name,
+      msrpCents: p.msrpCents,
+      imageUrl,
+      themeSlug: p.theme ? slugify(p.theme) : undefined,
+      stockLevel,
+    };
+  });
 
   /* ------------------------------- filtering ------------------------------ */
 
@@ -89,11 +114,10 @@ export default async function AllProductsPage({
     items = items.filter((i) => i.themeSlug === themeParam);
   }
 
-  // Age (minimum) filter – read possible age fields from the original record
+  // Age (minimum) filter
   const ageMin = Number(searchParams.age ?? "");
   if (Number.isFinite(ageMin) && ageMin > 0) {
-    // Build a quick lookup by slug so we can read age from the raw product
-    const bySlug = new Map(productsRaw.map((p) => [p.slug, p as unknown as Record<string, unknown>]));
+    const bySlug = new Map(active.map((p) => [p.slug, p]));
     items = items.filter((i) => {
       const src = bySlug.get(i.slug);
       if (!src) return true;
@@ -105,40 +129,43 @@ export default async function AllProductsPage({
   // Sort by price
   const sort = searchParams.sort ?? "price_asc";
   items.sort((a, b) =>
-    sort === "price_desc" ? b.msrpCents - a.msrpCents : a.msrpCents - b.msrpCents
+    sort === "price_desc"
+      ? b.msrpCents - a.msrpCents
+      : a.msrpCents - b.msrpCents
   );
 
-  // Final theme list for dropdown (prefer Theme table, else derive from products)
-  const themeOptions =
-    themesRaw.length > 0
-      ? themesRaw.map((t) => ({ slug: t.slug, name: t.name }))
-      : Array.from(
-          new Map(
-            productsRaw
-              .map((p) => {
-                const slug = readThemeSlug(p);
-                const name =
-                  (p.theme?.name as string | undefined) ??
-                  (slug ? slug.split("-").map((s) => s[0]?.toUpperCase() + s.slice(1)).join(" ") : undefined);
-                return slug ? [slug, { slug, name: name ?? slug }] as const : null;
-              })
-              .filter(Boolean) as Array<[string, { slug: string; name: string }]>
-          ).values()
-        ).sort((a, b) => a.name.localeCompare(b.name));
+  // Theme options (derived from catalog)
+  const themeOptions = Array.from(
+    new Map(
+      active
+        .map((p) => {
+          if (!p.theme) return null;
+          const slug = slugify(p.theme);
+          return [slug, { slug, name: p.theme }] as const;
+        })
+        .filter(Boolean) as Array<[string, { slug: string; name: string }]>
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
 
   /* --------------------------------- UI ---------------------------------- */
 
   // Keep current filter selections
   const currentSort = sort;
   const currentTheme = themeParam || "all";
-  const currentAge = Number.isFinite(ageMin) && ageMin > 0 ? String(ageMin) : "";
+  const currentAge =
+    Number.isFinite(ageMin) && ageMin > 0 ? String(ageMin) : "";
 
   return (
     <main className="mx-auto max-w-7xl px-3 md:px-4 py-6 md:py-8">
-      <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900">All Products</h1>
+      <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+        All Products
+      </h1>
 
       {/* Filters – simple GET form so URL reflects the state */}
-      <form className="mt-4 grid grid-cols-1 md:flex md:flex-wrap md:items-end gap-3 md:gap-3" method="get">
+      <form
+        className="mt-4 grid grid-cols-1 md:flex md:flex-wrap md:items-end gap-3 md:gap-3"
+        method="get"
+      >
         <div className="flex flex-col">
           <label className="text-xs text-slate-500">Sort by price</label>
           <select
@@ -196,7 +223,9 @@ export default async function AllProductsPage({
       </div>
 
       {items.length === 0 && (
-        <p className="mt-6 text-sm text-slate-500">No products match your filters.</p>
+        <p className="mt-6 text-sm text-slate-500">
+          No products match your filters.
+        </p>
       )}
     </main>
   );

@@ -1,121 +1,145 @@
-// src/app/products/[slug]/page.tsx
-import Image from "next/image";
+﻿// src/app/products/[slug]/page.tsx
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/currency";
-import { tierLabelForPrice } from "@/lib/tiers";
+import { getTierForPrice, tierLabelForPrice } from "@/lib/tiers";
 import AddToCartButton from "@/components/cart/AddToCartButton";
 
-export const dynamic = "force-dynamic"; // Disable static generation to avoid build-time DB queries
-
-export const revalidate = 60; // ISR: refresh product pages every minute
+export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 type Params = { params: { slug: string } };
 
-// existing local helpers/types
-type MaybeWeight = { weightLb?: number | null };
+type CatalogProduct = {
+  sku: string;
+  name: string;
+  slug: string;
+  msrpCents: number;
+  isActive: boolean;
+  setNumber: number;
+  theme: string;
+  pieceCount?: number | null;
+  ageMinimum?: number | null;
+  primaryImagePath?: string | null;
+  stockLevel?: number | null;
+  reorderPoint?: number | null;
+};
 
-// inventory can be a single row or an array depending on your relation include
-type InventoryRow = { qty?: number | null; quantity?: number | null } | null | undefined;
-type ProductWithInventory = { inventory?: InventoryRow | InventoryRow[] };
+function backendBase(): string {
+  return (
+    process.env.BACKEND_API_BASE ||
+    process.env.NEXT_PUBLIC_BACKEND_BASE ||
+    "http://localhost:4000"
+  ).replace(/\/$/, "");
+}
 
-function tierNumberForPrice(msrp: number): 1 | 2 | 3 | 4 | 5 {
-  if (msrp <= 25.99) return 1;
-  if (msrp <= 60.99) return 2;
-  if (msrp <= 100.99) return 3;
-  if (msrp <= 150.99) return 4;
-  return 5; // $151–$300
+function joinUrl(base: string, p: string) {
+  const clean = p.replace(/^\/+/, "");
+  return `${base}/${clean}`;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+  return (await r.json()) as T;
 }
 
 export default async function ProductPage({ params }: Params) {
-  // Make the slug URL-safe → true value
   const slug = decodeURIComponent(params.slug);
+  const base = backendBase();
 
-  const product = await prisma.product.findUnique({
-    where: { slug },
-    include: {
-      theme: true,
-      images: { orderBy: { sortOrder: "asc" } },
-      inventory: true,
-    },
-  });
+  let product: CatalogProduct | null = null;
+  try {
+    product = await fetchJson<CatalogProduct>(
+      joinUrl(base, `/catalog/products/${encodeURIComponent(slug)}`)
+    );
+  } catch {
+    product = null;
+  }
 
   if (!product) return notFound();
 
+  // Stock: use catalog stockLevel (from products.json)
+  const stockLevel =
+    typeof product.stockLevel === "number" && Number.isFinite(product.stockLevel)
+      ? product.stockLevel
+      : 0;
+  const qty = stockLevel;
+  const inStock = stockLevel > 0;
+
   const msrp = formatCents(product.msrpCents);
   const price = product.msrpCents / 100;
+  const tier = getTierForPrice(price);
   const tierLabel = tierLabelForPrice(price);
-  const tierNum = tierNumberForPrice(price);
 
-  const primary = product.images[0] ?? null;
-  const imageUrl = primary?.url || "/icon.png";
-  const setNumberStr = String(product.setNumber ?? "");
-  const weightLb =
-    "weightLb" in (product as object) ? (product as MaybeWeight).weightLb ?? null : null;
+  const imageUrl = product.primaryImagePath
+    ? joinUrl(base, product.primaryImagePath.replace(/\\/g, "/"))
+    : "/icon.png";
 
-  // ── Normalize inventory and derive qty + inStock (no `any`) ──────────────
-  const invSource = product as unknown as ProductWithInventory;
-  const inv = invSource.inventory;
-
-  let qty = 0;
-  if (Array.isArray(inv)) {
-    const first = inv[0] ?? null;
-    qty = Number(first?.qty ?? first?.quantity ?? 0) || 0;
-  } else if (inv) {
-    qty = Number(inv.qty ?? inv.quantity ?? 0) || 0;
-  }
-  const inStock = qty > 0;
+  const setNumberStr = String(product.setNumber);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
-      {/* Gallery */}
+      {/* Image */}
       <section>
-        <div className="relative aspect-[5/8] rounded-2xl overflow-hidden bg-slate-50 border border-slate-200">
-          {primary && (
-            <Image
-              src={primary.url}
-              alt={primary.alt || product.name}
-              fill
-              className="object-contain"
-              sizes="(min-width:1024px) 50vw, 100vw"
-            />
-          )}
+        <div className="relative aspect-[5/8] rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center">
+          {/* Using <img> avoids next/image remotePatterns config */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt={product.name}
+            className="w-full h-full object-contain"
+          />
         </div>
-        {product.images.length > 1 && (
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {product.images.slice(1, 5).map((img) => (
-              <div
-                key={img.id}
-                className="relative aspect-[4/3] rounded-lg overflow-hidden border"
-              >
-                <Image src={img.url} alt={img.alt || product.name} fill className="object-contain" />
-              </div>
-            ))}
-          </div>
-        )}
       </section>
 
       {/* Details */}
       <section>
         <div className="text-xs text-slate-500">
-          Set #{product.setNumber} · {product.theme.name}
+          Set #{product.setNumber} - {product.theme}
         </div>
-        <h1 className="mt-1 text-3xl font-extrabold text-slate-900">{product.name}</h1>
+
+        <h1 className="mt-1 text-3xl font-extrabold text-slate-900">
+          {product.name}
+        </h1>
 
         <div className="mt-4 flex items-center gap-3">
           <span className="text-2xl font-semibold">{msrp}</span>
-          <span className="text-xs rounded-full border px-2 py-0.5 text-slate-700">
-            {tierLabel} eligible
+          {tier === 0 ? (
+            <span className="text-xs rounded-full border px-2 py-0.5 text-slate-700">
+              MSRP only
+            </span>
+          ) : (
+            <span className="text-xs rounded-full border px-2 py-0.5 text-slate-700">
+              {tierLabel} eligible
+            </span>
+          )}
+          <span
+            className={`text-xs rounded-full border px-2 py-0.5 ${
+              inStock
+                ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+                : "text-rose-700 border-rose-200 bg-rose-50"
+            }`}
+          >
+            {inStock ? `${qty} in stock` : "Out of stock"}
           </span>
         </div>
 
-        <p className="mt-4 text-slate-700 leading-relaxed">
-          {product.description || "Fantastic set for fans and collectors."}
-        </p>
+        <div className="mt-4 text-sm text-slate-700 space-y-1">
+          {typeof product.pieceCount === "number" && (
+            <div>Pieces: {product.pieceCount}</div>
+          )}
+          {typeof product.ageMinimum === "number" && (
+            <div>Age: {product.ageMinimum}+</div>
+          )}
+          {product.theme && <div>Theme: {product.theme}</div>}
+        </div>
 
         {/* Policy/Points hints (MAP-safe) */}
         <ul className="mt-5 text-sm text-slate-700 space-y-1">
-          <li>Bundle savings apply at checkout when you add 3+ sets in the same price tier.</li>
+          <li>
+            Bundle savings apply at checkout when you add 3+ sets in the same
+            price tier.
+          </li>
           <li>Registered members earn LuvPoints (1 pt per $1) on every purchase.</li>
           <li>Packed for collectors. Ships within 24 hours.</li>
         </ul>
@@ -123,22 +147,18 @@ export default async function ProductPage({ params }: Params) {
         {/* Add to cart */}
         <div className="mt-6 flex items-center gap-3">
           <AddToCartButton
-            productId={product.id}
+            productId={product.sku} // string product id for cart
             setNumber={setNumberStr}
             name={product.name}
             imageUrl={imageUrl}
-            tier={tierNum}
+            tier={tier}
             msrpCents={product.msrpCents}
-            weightLb={weightLb}
+            weightLb={null}
             inStock={inStock}
           />
-
-          {/* “Add to Bundle” can be wired later */}
-          <button className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 px-5 py-3">
-            Add to Bundle
-          </button>
         </div>
       </section>
     </main>
   );
 }
+

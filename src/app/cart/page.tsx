@@ -254,6 +254,72 @@ export default function CartPage() {
     return units * 100; // 100 cents = $1 per $100 block
   }, [insure, merchandiseCents]);
 
+    const BACKEND_BASE =
+    process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:4000';
+
+  async function startDemoCheckout(paymentProvider: 'stripe' | 'paypal') {
+    if (!cart) return;
+
+    setLoading(true);
+    try {
+      // 1) Save shipping into your cookie (ShippingForm already wires this)
+      await window.luvbricks_saveShipTo?.();
+
+      // 2) Build an order payload for the backend
+      const orderNumber = `LB-${Date.now()}`;
+
+      const payload = {
+        orderNumber,
+
+        // Money fields (match your backend Order model meaning)
+        subtotalCents: totals.msrpSubtotalCents, // before discounts/tax/shipping
+        discountCents: (totals.appliedRedeemCents || 0) + (totals.bundleDiscountCents || 0),
+        shippingCents: totals.shippingFinalCents + insuranceCents,
+        taxCents: totals.taxCents,
+        totalCents: totals.grandTotalCents + insuranceCents,
+
+        paymentProvider, // "stripe" | "paypal"
+        paymentRef: null,
+
+        // IMPORTANT: setNumber-based item identity (your preferred option)
+        items: (cart.items || [])
+          .filter((it) => it.qty > 0)
+          .map((it) => ({
+            setNumber: it.setNumber,       // <-- key identity
+            quantity: it.qty,
+            unitPriceCents: it.msrpCents,  // keep simple for now
+          })),
+
+        // Optional (safe if backend ignores these for now)
+        pointsEarned,
+        pointsRedeemed: totals.appliedRedeemPoints,
+        bundleSavingsCents: totals.bundleDiscountCents,
+      };
+
+      // 3) Create the order in the backend
+      const res = await fetch(`${BACKEND_BASE}/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(j?.error || 'Failed to create order');
+      }
+
+      alert(
+        `(Demo) Order created: ${j?.orderNumber || orderNumber}\nNext: start ${paymentProvider.toUpperCase()} checkout session.`
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Checkout failed';
+      alert(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-8">
 
@@ -520,12 +586,7 @@ export default function CartPage() {
             <button
               type="button"
               disabled={!hasItems || loading}
-              onClick={async () => {
-                await window.luvbricks_saveShipTo?.();
-                alert(
-                  'Stripe checkout would start here. Shipping address saved.'
-                );
-              }}
+              onClick={() => startDemoCheckout('stripe')} 
               className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               title="Pay with Stripe"
             >
@@ -540,12 +601,7 @@ export default function CartPage() {
             <button
               type="button"
               disabled={!hasItems || loading}
-              onClick={async () => {
-                await window.luvbricks_saveShipTo?.();
-                alert(
-                  'PayPal checkout would start here. Shipping address saved.'
-                );
-              }}
+              onClick={() => startDemoCheckout('paypal')}
               className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               title="Pay with PayPal"
             >

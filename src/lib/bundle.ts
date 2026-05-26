@@ -1,4 +1,4 @@
-// src/lib/bundle.ts
+﻿// src/lib/bundle.ts
 //
 // Tiered Bundling System — exactly as specified.
 // One discount per tier applies based on how many sets in that SAME TIER
@@ -6,29 +6,35 @@
 //
 // NOTE: We assume every cart line has { msrpCents:number, tier:number }.
 
+import { getTierForPrice, type Tier, type TierOrNone } from "./tiers";
+
 // Percent helper
 const pct = (baseCents: number, percent: number) =>
   Math.round(baseCents * (percent / 100));
 
-export type BundleTier = 1 | 2 | 3 | 4 | 5;
+export type BundleTier = Tier;
+export type BundleTierOrNone = TierOrNone;
 
 export type BundleItem = {
   productId: string;
   name: string;
   setNumber?: number | null;
-  tier: BundleTier;        // 1..5 (derived from MSRP range)
-  msrpCents: number;       // integer cents
-  qty: number;             // integer >= 1
+  tier: BundleTierOrNone; // 0 or 1..4 (derived from MSRP range)
+  msrpCents: number; // integer cents
+  qty: number; // integer >= 1
 };
 
 // Your exact discount table (by tier/quantity)
 const DISCOUNTS: Record<BundleTier, { buy3: number; buy4: number; buy5plus: number }> = {
-  1: { buy3: 9,  buy4: 10, buy5plus: 11 },
-  2: { buy3: 8,  buy4: 9,  buy5plus: 10 },
-  3: { buy3: 6,  buy4: 7,  buy5plus: 8 },
-  4: { buy3: 5,  buy4: 6,  buy5plus: 7 },
-  5: { buy3: 3,  buy4: 4,  buy5plus: 5 },
+  1: { buy3: 3, buy4: 4, buy5plus: 5 },
+  2: { buy3: 5, buy4: 6, buy5plus: 7 },
+  3: { buy3: 6, buy4: 7, buy5plus: 8 },
+  4: { buy3: 8, buy4: 9, buy5plus: 10 },
 };
+
+function isBundleTier(tier: number): tier is BundleTier {
+  return tier >= 1 && tier <= 4;
+}
 
 export function groupByTier(items: BundleItem[]) {
   const byTier: Record<BundleTier, { count: number; subtotalCents: number }> = {
@@ -36,9 +42,9 @@ export function groupByTier(items: BundleItem[]) {
     2: { count: 0, subtotalCents: 0 },
     3: { count: 0, subtotalCents: 0 },
     4: { count: 0, subtotalCents: 0 },
-    5: { count: 0, subtotalCents: 0 },
   };
   for (const it of items) {
+    if (!isBundleTier(it.tier)) continue;
     const line = it.msrpCents * it.qty;
     byTier[it.tier].count += it.qty;
     byTier[it.tier].subtotalCents += line;
@@ -74,10 +80,7 @@ export function computeBundleDiscountCents(items: BundleItem[]): number {
  * Utility: derive tier number from a product's MSRP dollars.
  * (If you already store tier on Product, you DO NOT need this.)
  */
-export function tierFromMsrp(msrpDollars: number): BundleTier {
-  if (msrpDollars <= 25.99) return 1;
-  if (msrpDollars <= 60.99) return 2;
-  if (msrpDollars <= 100.99) return 3;
-  if (msrpDollars <= 150.99) return 4;
-  return 5;
+export function tierFromMsrp(msrpDollars: number): BundleTierOrNone {
+  return getTierForPrice(msrpDollars);
 }
+

@@ -1,19 +1,18 @@
-// src/app/tiers/page.tsx
+﻿// src/app/tiers/page.tsx
 import Link from "next/link";
 import Image from "next/image";
 import { TIERS, type Tier } from "@/lib/tiers";
 
 export const dynamic = "force-dynamic";
 
-const TIER_IDS: Tier[] = [1, 2, 3, 4, 5];
+const TIER_IDS: Tier[] = [1, 2, 3, 4];
 
 // Option A (string paths from /public)
 const TIER_IMAGES: Record<Tier, string> = {
-  1: "/tiers/tier1_promo_image.png",
-  2: "/tiers/tier2_promo_image.png",
-  3: "/tiers/tier3_promo_image.png",
-  4: "/tiers/tier4_promo_image.png",
-  5: "/tiers/tier5_promo_image.png",
+  1: "/tiers/tier2_promo_image.png",
+  2: "/tiers/tier3_promo_image.png",
+  3: "/tiers/tier4_promo_image.png",
+  4: "/tiers/tier5_promo_image.png",
 };
 
 // Helpers
@@ -22,7 +21,7 @@ const money = (n: number) =>
 
 const rangeLabel = (id: Tier) => {
   const { min, max } = TIERS[id];
-  return max !== undefined ? `${money(min)}–${money(max)}` : `${money(min)}+`;
+  return max !== undefined ? `${money(min)}-${money(max)}` : `${money(min)}+`;
 };
 
 export default function TiersPage() {
@@ -34,7 +33,7 @@ export default function TiersPage() {
         account to earn LuvPoints.
       </p>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {TIER_IDS.map((id) => (
           <Link
             key={id}
@@ -48,7 +47,7 @@ export default function TiersPage() {
                 alt={`Tier ${id} promo`}
                 fill
                 className="object-cover"
-                sizes="(min-width:1024px) 18vw, (min-width:640px) 45vw, 90vw"
+                sizes="(min-width:1024px) 22vw, (min-width:640px) 45vw, 90vw"
                 priority={id === 1} // preload the first one, optional
               />
             </div>
@@ -58,9 +57,9 @@ export default function TiersPage() {
               <div className="mt-0.5 text-base font-semibold text-slate-900">{rangeLabel(id)}</div>
 
               <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#0F172A] group-hover:underline">
-              Shop Tier
+                Shop Tier
                 <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M7 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M7 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </p>
 

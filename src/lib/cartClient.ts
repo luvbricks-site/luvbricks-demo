@@ -1,10 +1,11 @@
+﻿import type { TierOrNone } from "@/lib/tiers";
 // src/lib/cartClient.ts
 export type AddItemInput = {
   productId: string;
   setNumber: string;
   name: string;
   imageUrl: string | null;
-  tier: 1 | 2 | 3 | 4 | 5;
+  tier: TierOrNone;
   msrpCents: number;
   qty: number;
   weightLb: number | null;
@@ -64,3 +65,5 @@ export async function clearCart() {
     cache: 'no-store',
   });
 }
+
+

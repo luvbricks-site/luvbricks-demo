@@ -1,16 +1,17 @@
-// src/components/AddToCartButton.tsx
+﻿// src/components/AddToCartButton.tsx
 'use client';
 
 import { useState } from 'react';
 import { addToCart } from '@/lib/cartClient';
 import { notifyCartChanged } from '@/lib/cartBus';
+import type { TierOrNone } from '@/lib/tiers';
 
 type Props = {
   productId: string;
   setNumber: string;
   name: string;
   imageUrl?: string;               // will default to '/icon.png'
-  tier: 1 | 2 | 3 | 4 | 5;
+  tier: TierOrNone;
   msrpCents: number;
   weightLb?: number | null;
   /** Pass false when the product is out of stock; omit/true keeps button enabled */
@@ -60,7 +61,7 @@ export default function AddToCartButton(props: Props) {
         /* ignore localStorage issues */
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Sorry—could not add that.';
+      const message = err instanceof Error ? err.message : 'Sorryâ€”could not add that.';
       setMsg(message);
     } finally {
       setBusy(false);
@@ -85,7 +86,7 @@ export default function AddToCartButton(props: Props) {
           ].join(' ')
         }
       >
-        {available ? (busy ? 'Adding…' : 'Add to Cart') : 'Out of stock'}
+        {available ? (busy ? 'Addingâ€¦' : 'Add to Cart') : 'Out of stock'}
       </button>
 
       {msg && (
@@ -96,3 +97,5 @@ export default function AddToCartButton(props: Props) {
     </div>
   );
 }
+
+

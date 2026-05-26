@@ -1,7 +1,5 @@
 // src/app/api/gift-guide/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import type { Prisma } from "@prisma/client";
 
 type Payload = {
   ageMin?: number;        // giftee’s age in years
@@ -11,10 +9,57 @@ type Payload = {
   experience?: string;    // "Yes, they love it!" | "They've built a few" | "I'm not sure" | "No, this would be their first"
 };
 
+type CatalogProduct = {
+  sku: string;
+  name: string;
+  slug: string;
+  msrpCents: number;
+  isActive: boolean;
+  setNumber: number;
+  theme?: string | null;
+  ageMinimum?: number | null;
+  primaryImagePath?: string | null;
+  stockLevel?: number | null;
+};
+
 // small helper to coerce/clamp inputs
 function clamp(n: unknown, lo: number, hi: number, fallback: number) {
   const x = typeof n === "number" && Number.isFinite(n) ? n : fallback;
   return Math.min(Math.max(x, lo), hi);
+}
+
+function backendBase(): string {
+  return (
+    process.env.BACKEND_API_BASE ||
+    process.env.NEXT_PUBLIC_BACKEND_BASE ||
+    "http://localhost:4000"
+  ).replace(/\/$/, "");
+}
+
+function joinUrl(base: string, p: string) {
+  const clean = p.replace(/^\/+/, "");
+  return `${base}/${clean}`;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+  return (await r.json()) as T;
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+}
+
+function toAbsImageUrl(base: string, p?: string | null): string | null {
+  if (!p) return null;
+  if (/^https?:\/\//i.test(p)) return p;
+  const clean = p.startsWith("/") ? p : `/${p}`;
+  return `${base}${clean}`;
 }
 
 export async function POST(req: Request) {
@@ -36,34 +81,31 @@ export async function POST(req: Request) {
         : undefined;
     const experience = body.experience ?? "";
 
-    // --- where clause (typed explicitly) ------------------------------------
-    const where: Prisma.ProductWhereInput = {
-      isActive: true,
-      ageMin: { lte: gifteeAge },
-      msrpCents: { gte: priceMin, lte: priceMax },
-      ...(themeSlugs
-        ? {
-            // Theme is a relation; this mirrors how you filtered theme elsewhere
-            theme: { slug: { in: themeSlugs } },
-          }
-        : {}),
-    };
+    const base = backendBase();
+    const catalog = await fetchJson<CatalogProduct[]>(
+      joinUrl(base, "/catalog/products")
+    );
 
-    // --- query ---------------------------------------------------------------
-    const products = await prisma.product.findMany({
-      where,
-      orderBy: [{ msrpCents: "asc" }, { name: "asc" }],
-      include: {
-        images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        theme: { select: { slug: true } },
-        inventory: { select: { qty: true }, take: 1 },
-      },
-      take: 60,
-    });
+    const products = catalog
+      .filter((p) => p && p.isActive)
+      .filter((p) => p.msrpCents >= priceMin && p.msrpCents <= priceMax)
+      .filter((p) => {
+        if (typeof p.ageMinimum !== "number") return true;
+        return p.ageMinimum <= gifteeAge;
+      })
+      .filter((p) => {
+        if (!themeSlugs) return true;
+        const themeSlug = p.theme ? slugify(p.theme) : "";
+        return themeSlug ? themeSlugs.includes(themeSlug) : false;
+      })
+      .sort((a, b) => a.msrpCents - b.msrpCents || a.name.localeCompare(b.name))
+      .slice(0, 60);
 
-    // helpers
-    const qtyOf = (p: (typeof products)[number]) => p.inventory?.[0]?.qty ?? 0;
-    const inStock = (p: (typeof products)[number]) => qtyOf(p) > 0;
+    const qtyOf = (p: CatalogProduct) =>
+      typeof p.stockLevel === "number" && Number.isFinite(p.stockLevel)
+        ? p.stockLevel
+        : 0;
+    const inStock = (p: CatalogProduct) => qtyOf(p) > 0;
 
     const beginnerLike =
       experience === "No, this would be their first" ||
@@ -81,13 +123,13 @@ export async function POST(req: Request) {
     });
 
     const mapped = ranked.slice(0, 12).map((p) => ({
-      id: p.id,
+      id: p.sku,
       slug: p.slug,
       setNumber: p.setNumber,
       name: p.name,
       msrpCents: p.msrpCents,
-      imageUrl: p.images[0]?.url ?? null,
-      themeSlug: p.theme?.slug ?? undefined,
+      imageUrl: toAbsImageUrl(base, p.primaryImagePath),
+      themeSlug: p.theme ? slugify(p.theme) : undefined,
       qty: qtyOf(p),
       inStock: inStock(p),
     }));
